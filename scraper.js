@@ -2,6 +2,7 @@ const fs = require('fs');
 const cheerio = require('cheerio');
 const path = require('path');
 const { REFUSED } = require('dns');
+const { title } = require('process');
 
 /**
  * Função auxiliar para normalizar textos.
@@ -96,6 +97,9 @@ function identifyTemplate(html) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4($, table, courtName, courtDate) {
+  let titlename = ''
+  // pegar o título com base no template
+  titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
   const rows = table.find('tr');
 
@@ -150,6 +154,12 @@ function extractDataTemplate4($, table, courtName, courtDate) {
         defendant,
       });
 
+      function extractCourtLocation(titlename) {
+        const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
+        return match ? match[1].trim() : null;
+      }
+      
+      courtName = extractCourtLocation(titlename);
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
@@ -168,6 +178,7 @@ function extractDataTemplate4($, table, courtName, courtDate) {
         return `${day}/${month}/${year}`;
       }
       const rowData = {
+        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || '',
@@ -195,6 +206,9 @@ function extractDataTemplate4($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4a($, table, courtName, courtDate) {
+  let titlename = ''
+  // pegar o título com base no template
+  titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
   const rows = table.find('tr');
 
@@ -274,7 +288,12 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
         claimant,
         defendant,
       });
-
+      function extractCourtLocation(titlename) {
+        const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
+        return match ? match[1].trim() : null;
+      }
+      
+      courtName = extractCourtLocation(titlename);
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
@@ -293,6 +312,7 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
         return `${day}/${month}/${year}`;
       }
       const rowData = {
+        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || '',
@@ -320,6 +340,9 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate5($, table, courtName, courtDate) {
+  let titlename = ''
+  // pegar o título com base no template
+  titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
   const rows = table.find('tr');
 
@@ -384,15 +407,15 @@ function extractDataTemplate5($, table, courtName, courtDate) {
       if (claimNumber === "PCOL") return;
 
       
-      
       caseDetails = caseDetails.replace(/^[A-Z0-9]+ /, "")
       
       let claimant = '';
       let defendant = '';
 
       // Separar o texto do 'caseDetails' para identificar o 'Claimant' e 'Defendant'
-      if (/\s+(v|vs)\s+/i.test(caseDetails)) {
-        const parts = caseDetails.split(/\s+(v|vs)\s+/i);
+      if (/\s+(v|vs)\s+/i.test(caseDetails) ||/\s+(-v-|-vs-)\s+/i.test(caseDetails)){
+        let parts = caseDetails.split(/\s+(v|vs)\s+/i);
+        if (/\s+(-v-|-vs-)\s+/i.test(caseDetails)){parts = caseDetails.split(/\s+(-v-|-vs-)\s+/i)}
         if (parts.length >= 2) {
           claimant = parts[0].trim();
           
@@ -415,6 +438,12 @@ function extractDataTemplate5($, table, courtName, courtDate) {
         claimant,
         defendant,
       });
+      function extractCourtLocation(titlename) {
+        const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
+        return match ? match[1].trim() : null;
+      }
+      
+      courtName = extractCourtLocation(titlename);
       
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
@@ -435,6 +464,7 @@ function extractDataTemplate5($, table, courtName, courtDate) {
       }
       
       const rowData = {
+        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || 'Not Provided',
@@ -462,6 +492,9 @@ function extractDataTemplate5($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate7($, table, courtName, courtDate) {
+  let titlename = ''
+  // pegar o título com base no template
+  titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
   const rows = table.find('tr');
 
@@ -553,6 +586,12 @@ function extractDataTemplate7($, table, courtName, courtDate) {
         hearingType,
         hearingPlatform,
       });
+      function extractCourtLocation(titlename) {
+        const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
+        return match ? match[1].trim() : null;
+      }
+      
+      courtName = extractCourtLocation(titlename);
       
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
@@ -573,6 +612,7 @@ function extractDataTemplate7($, table, courtName, courtDate) {
       }
 
       const rowData = {
+        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': caseRef || '',
@@ -603,6 +643,9 @@ function extractDataTemplate7($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplateOther($, table, template, courtName, courtDate) {
+  let titlename = ''
+  // pegar o título com base no template
+  titlename = $('title').text().trim(); // Seleciona o título para o template
   // Implementar lógica específica para outros templates aqui, se necessário
   // Por enquanto, retornamos um array vazio
   return [];
@@ -630,8 +673,10 @@ function scrapeDataFromHtml(filePath) {
   console.log(`Processando o arquivo ${filePath} com o ${template}`);
 
   // Variáveis para armazenar Court Name e Court Date
+
   let courtName = '';
   let courtDate = '';
+ 
 
   $('p').each((i, elem) => {
     const text = $(elem).text().trim();
@@ -764,6 +809,7 @@ function scrapeDataFromHtml(filePath) {
 function saveToCsv(data, outputPath, originalFilePath) {
   try {
     const headers = [
+      'Title',
       'Court Name',
       'Court Date',
       'Claim Number',
