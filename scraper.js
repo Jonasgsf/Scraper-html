@@ -823,7 +823,7 @@ function main() {
   const outputFile = 'output.csv';
   const allData = [];
 
-  // Verificar se o diretório de entrada existe
+  // Verificar se o diretório de entrada existe s
   if (!fs.existsSync(inputDirectory)) {
     console.error(`Diretório de entrada não encontrado: ${inputDirectory}`);
     return;
