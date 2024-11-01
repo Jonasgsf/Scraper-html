@@ -43,19 +43,42 @@ function identifyTemplate(html) {
   }
 
   // Template4a: Verifica se existe uma célula de cabeçalho com 'Claim Number Claimant'
-  const hasCombinedHeader = $('table')
-    .find('th, td')
-    .filter(function () {
-      return normalizeText($(this).text()) === 'claim number claimant';
-    }).length > 0;
+ // Verifica se o título contém 'CourtServe', o que indica uma página relevante
+ const isCourtServePage = normalizeText($('title').text()).includes('courtserve');
 
-  if (hasCombinedHeader) {
-    return 'template4a';
+ // Detecta cabeçalhos da tabela comuns, como 'Time', 'Claim Number Claimant', 'Defendant'
+ const hasTimeHeader = $('table')
+   .find('th, td')
+   .filter(function () {
+     return normalizeText($(this).text()) === 'time';
+   }).length > 0;
+
+ const hasClaimNumberClaimantHeader = $('table')
+   .find('th, td')
+   .filter(function () {
+     return normalizeText($(this).text()).includes('claim number') && $(this).text().toLowerCase().includes('claimant');
+   }).length > 0;
+
+ const hasDefendantHeader = $('table')
+   .find('th, td')
+   .filter(function () {
+     return normalizeText($(this).text()).includes('defendant');
+   }).length > 0;
+
+ // Palavras-chave no corpo do documento que indicam audiência (mais genéricas para abranger variações)
+ const hasGenericKeywords = $('body').text().match(/(hearing room|deputy district judge|sitting at|court room|magistrates court)/i);
+
+ // Lógica final de reconhecimento do template
+
+ if (/claim\s*number/i.test(textContent) && 
+  /Nottingham/i.test(textContent) && 
+  /Wigham/i.test(textContent) && 
+  /Court\s*Room\s*7/i.test(textContent)) {
+  return 'template4';
   }
 
-  // Template4: Verifica se existe 'claim number' ou variações, mas sem o cabeçalho combinado
-  if (/claim\s*number/i.test(textContent)) {
-    return 'template4';
+ else if (isCourtServePage && hasTimeHeader && hasClaimNumberClaimantHeader && hasDefendantHeader && hasGenericKeywords|| (/claim\s*number/i.test(textContent))) {
+   return 'template4a';  // Template identificado com base nos elementos de estrutura e palavras-chave genéricas
   }
 
   // Caso nenhum template seja identificado, retornar null
@@ -178,13 +201,21 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
   let headersIndex = {};
 
   rows.each((i, row) => {
-    const cells = $(row).find('th, td');
-    const cellsText = [];
+    let cells = $(row).find('th, td');
+    let cellsText = [];
 
     cells.each((j, cell) => {
-      let cellText = $(cell).text().trim();
-      cellText = cellText.replace(/\s+/g, ' ');
-      cellsText.push(cellText);
+      // Extrair o texto de cada parágrafo dentro da célula
+      let cellLines = [];
+      $(cell)
+        .find('p')
+        .each((k, p) => {
+          let lineText = $(p).text().trim().replace(/\s+/g, ' ');
+          if (lineText) cellLines.push(lineText); // Adicionar apenas se não estiver vazio
+        });
+      
+      // Concatenar as linhas individuais em uma string final para a célula
+      cellsText.push(cellLines.join(' | ')); // Usar ' | ' para separar linhas internas
     });
 
     // Identificar os índices dos cabeçalhos
@@ -200,7 +231,6 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
         let headerText = normalizeText($(cell).text());
         let colspan = parseInt($(cell).attr('colspan')) || 1;
 
-        // Verificar se o headerText contém 'Claim Number Claimant'
         if (/^claim\s*number claimant$/i.test(headerText)) {
           headersIndex.claimNumber = logicalIndex;
           headersIndex.claimant = logicalIndex + 1;
@@ -215,14 +245,29 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
 
       console.log('Cabeçalhos encontrados (template4a):', headersIndex);
     } else if (cellsText.length > 1 && Object.keys(headersIndex).length > 0) {
-      // Verificar se a linha é uma linha de dados válida
+      // Linha de dados válida
       if (cellsText.every((text) => text === '')) return;
+      function splitAtFirstPipe(text) {
+        const [firstPart, ...rest] = text.split(/ \| /);
+        return [firstPart.trim(), rest.join(" | ").trim()];
+      }
+      const time = cellsText[0] || '';
+      const claimNumber = cellsText[1] || '';
 
-      // Extrair dados das linhas de dados
-      const claimNumber = cellsText[headersIndex.claimNumber] || '';
-      const claimant = cellsText[headersIndex.claimant] || '';
-      const defendant = cellsText[headersIndex.defendant] || '';
+      if (cellsText.length === 3){
+        const claimantANDdefendant = cellsText[2] || '';
+        [claimant, defendant] = splitAtFirstPipe(claimantANDdefendant);
+        if (defendant === ""){ defendant = "Not Provided"};
+        if (claimant === ""){ claimant = "Not Provided"};
+      }
 
+      else{
+        claimant = cellsText[2] || 'Not Provided';
+        defendant = cellsText[3] || 'Not Provided';
+      }
+      
+      
+      console.log(cellsText)
       // Logs para depuração
       console.log(`Linha ${i}:`, {
         claimNumber,
@@ -590,11 +635,15 @@ function scrapeDataFromHtml(filePath) {
 
   $('p').each((i, elem) => {
     const text = $(elem).text().trim();
-    if (/court at/i.test(text)) {
-      const parts = text.split(/court at/i);
+    if (/court at/i.test(text) || /sitting at/i.test(text)) {
+      if(/court at/i.test(text)){  parts = text.split(/court at/i);}
+      else if (/sitting at/i.test(text)){  parts = text.split(/sitting at/i);}
+      console.log(parts)
       if (parts.length > 1) {
         courtName = parts[1].trim();
+        console.log(courtName)
       }
+      
     }
 
     const datePattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}$/i;
@@ -619,13 +668,20 @@ function scrapeDataFromHtml(filePath) {
       );
     });
   } else if (template === 'template4a') {
+    // Altere o seletor para que reconheça o cabeçalho agrupado
     tables = $('table').filter(function () {
-      const tableText = $(this).text().toLowerCase();
+      const tableText = normalizeText($(this).text());
+    
+      // Ajuste para detectar um número de processo com pelo menos quatro caracteres seguido de nomes
+      const hasClaimPattern = /\b[a-z0-9]{4,}\b\s+[a-z]+\s+[a-z]+/i.test(tableText);
+      console.log(/time\s+claim\s*number\s+claimant\s+defendant/i.test(tableText) || // Verifica cabeçalho explícito
+        hasClaimPattern)
       return (
-        /claim\s*number claimant/i.test(tableText) &&
-        /defendant/i.test(tableText)
+        /time\s+claim\s*number\s+claimant\s+defendant/i.test(tableText) || // Verifica cabeçalho explícito
+        hasClaimPattern // Detecta padrão de número de processo seguido por nomes
       );
     });
+
   } else if (template === 'template7') {
     tables = $('table').filter(function () {
       const tableText = $(this).text().toLowerCase();
@@ -703,8 +759,9 @@ function scrapeDataFromHtml(filePath) {
  *
  * @param {Array} data - Array de objetos com os dados a serem salvos.
  * @param {string} outputPath - Caminho para o arquivo CSV de saída.
+ * @param {string} originalFilePath - Caminho do arquivo HTML original.
  */
-function saveToCsv(data, outputPath) {
+function saveToCsv(data, outputPath, originalFilePath) {
   try {
     const headers = [
       'Court Name',
@@ -719,6 +776,21 @@ function saveToCsv(data, outputPath) {
 
     if (data.length === 0) {
       console.warn('Nenhum dado para salvar no arquivo CSV.');
+
+      // Verifica se `originalFilePath` está definido antes de mover o arquivo
+      if (originalFilePath) {
+        const unprocessedDir = path.join(__dirname, 'unprocessed_files');
+        if (!fs.existsSync(unprocessedDir)) {
+          fs.mkdirSync(unprocessedDir);
+        }
+
+        // Move o arquivo original para a pasta `unprocessed_files`
+        const fileName = path.basename(originalFilePath);
+        const newFilePath = path.join(unprocessedDir, fileName);
+        fs.renameSync(originalFilePath, newFilePath);
+
+        console.log(`Arquivo movido para ${newFilePath}`);
+      }
       return;
     }
 
@@ -728,30 +800,28 @@ function saveToCsv(data, outputPath) {
         data.map((row) => {
           const formattedRow = headers.map((header) => {
             const cellData = (row[header] || '').toString().trim();
-
-            // Escapa os dados da célula se contiver vírgulas ou aspas
             return `"${cellData.replace(/"/g, '""')}"`;
           });
-
           return formattedRow.join(',');
         })
       )
       .join('\n');
 
-    fs.writeFileSync(outputPath, csvContent); // Escreve no arquivo CSV
+    fs.writeFileSync(outputPath, csvContent);
     console.log(`Dados salvos em ${outputPath}`);
   } catch (error) {
     console.error(`Erro ao salvar o arquivo CSV: ${error.message}`);
   }
 }
 
+
 /**
  * Função principal para executar a extração e salvamento.
  */
 function main() {
-  const inputDirectory = './html_files'; // Diretório de entrada (alterar conforme necessário)
-  const outputFile = 'output.csv'; // Nome do arquivo de saída (alterar conforme necessário)
-  const allData = []; // Array para armazenar todos os dados
+  const inputDirectory = './html_files';
+  const outputFile = 'output.csv';
+  const allData = [];
 
   // Verificar se o diretório de entrada existe
   if (!fs.existsSync(inputDirectory)) {
@@ -765,11 +835,15 @@ function main() {
 
       // Extrai dados do arquivo HTML
       const fileData = scrapeDataFromHtml(filePath);
-      allData.push(...fileData); // Adiciona dados ao array
+
+      // Salva os dados do arquivo específico ou move para a pasta `unprocessed_files` se vazio
+      saveToCsv(fileData, outputFile, filePath);
+      allData.push(...fileData);
     }
   });
 
-  saveToCsv(allData, outputFile); // Salva todos os dados em um arquivo CSV
+  // Salva todos os dados no arquivo CSV final
+  saveToCsv(allData, outputFile, null);
 }
 
 main(); // Executa a função principal
