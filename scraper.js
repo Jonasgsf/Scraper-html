@@ -1,8 +1,7 @@
 const fs = require('fs');
 const cheerio = require('cheerio');
 const path = require('path');
-const { REFUSED } = require('dns');
-const { title } = require('process');
+const puppeteer = require('puppeteer');
 
 /**
  * Função auxiliar para normalizar textos.
@@ -44,48 +43,39 @@ function identifyTemplate(html) {
   }
 
   // Template4a: Verifica se existe uma célula de cabeçalho com 'Claim Number Claimant'
- // Verifica se o título contém 'CourtServe', o que indica uma página relevante
- const isCourtServePage = normalizeText($('title').text()).includes('courtserve');
+  const isCourtServePage = normalizeText($('title').text()).includes('courtserve');
 
- // Detecta cabeçalhos da tabela comuns, como 'Time', 'Claim Number Claimant', 'Defendant'
- const hasTimeHeader = $('table')
-   .find('th, td')
-   .filter(function () {
-     return normalizeText($(this).text()) === 'time';
-   }).length > 0;
+  const hasTimeHeader = $('table')
+    .find('th, td')
+    .filter(function () {
+      return normalizeText($(this).text()) === 'time';
+    }).length > 0;
 
- const hasClaimNumberClaimantHeader = $('table')
-   .find('th, td')
-   .filter(function () {
-     return normalizeText($(this).text()).includes('claim number') && $(this).text().toLowerCase().includes('claimant');
-   }).length > 0;
+  const hasClaimNumberClaimantHeader = $('table')
+    .find('th, td')
+    .filter(function () {
+      return normalizeText($(this).text()).includes('claim number') && $(this).text().toLowerCase().includes('claimant');
+    }).length > 0;
 
- const hasDefendantHeader = $('table')
-   .find('th, td')
-   .filter(function () {
-     return normalizeText($(this).text()).includes('defendant');
-   }).length > 0;
+  const hasDefendantHeader = $('table')
+    .find('th, td')
+    .filter(function () {
+      return normalizeText($(this).text()).includes('defendant');
+    }).length > 0;
 
- // Palavras-chave no corpo do documento que indicam audiência (mais genéricas para abranger variações)
- const hasGenericKeywords = $('body').text().match(/(hearing room|deputy district judge|sitting at|court room|magistrates court)/i);
+  const hasGenericKeywords = $('body').text().match(/(hearing room|deputy district judge|sitting at|court room|magistrates court)/i);
 
- // Lógica final de reconhecimento do template
-
- if (/claim\s*number/i.test(textContent) && 
-  /Nottingham/i.test(textContent) && 
-  /Wigham/i.test(textContent) && 
-  /Court\s*Room\s*7/i.test(textContent)) {
-  return 'template4';
+  if (/claim\s*number/i.test(textContent) && 
+    /Nottingham/i.test(textContent) && 
+    /Wigham/i.test(textContent) && 
+    /Court\s*Room\s*7/i.test(textContent)) {
+    return 'template4';
+  } else if (isCourtServePage && hasTimeHeader && hasClaimNumberClaimantHeader && hasDefendantHeader && hasGenericKeywords || (/claim\s*number/i.test(textContent))) {
+    return 'template4a';
   }
 
- else if (isCourtServePage && hasTimeHeader && hasClaimNumberClaimantHeader && hasDefendantHeader && hasGenericKeywords|| (/claim\s*number/i.test(textContent))) {
-   return 'template4a';  // Template identificado com base nos elementos de estrutura e palavras-chave genéricas
-  }
-
-  // Caso nenhum template seja identificado, retornar null
   return null;
 }
-
 
 /**
  * Função para extrair dados da tabela para o template4.
@@ -97,7 +87,7 @@ function identifyTemplate(html) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4($, table, courtName, courtDate) {
-  let titlename = ''
+  let titlename = '';
   // pegar o título com base no template
   titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
@@ -144,8 +134,10 @@ function extractDataTemplate4($, table, courtName, courtDate) {
 
       // Extrair dados das linhas de dados
       const claimNumber = cellsText[headersIndex.claimNumber] || '';
-      const claimant = cellsText[headersIndex.claimant] || '';
-      const defendant = cellsText[headersIndex.defendant] || '';
+      let claimant = cellsText[headersIndex.claimant] || '';
+      let defendant = cellsText[headersIndex.defendant] || '';
+      claimant = claimant.replace(/\|/g, '');
+      defendant = defendant.replace(/\|/g, '');
 
       // Logs para depuração
       console.log(`Linha ${i}:`, {
@@ -158,27 +150,28 @@ function extractDataTemplate4($, table, courtName, courtDate) {
         const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
         return match ? match[1].trim() : null;
       }
-      
+
       courtName = extractCourtLocation(titlename);
+
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
-        
+
         // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
         const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
-      
+
         // Cria um objeto Date
         const date = new Date(cleanDatePart);
-      
+
         // Formata a data como dd/mm/yyyy
         const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
         const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
         const year = date.getFullYear();
-      
+
         return `${day}/${month}/${year}`;
       }
+
       const rowData = {
-        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || '',
@@ -187,6 +180,7 @@ function extractDataTemplate4($, table, courtName, courtDate) {
         'Duration': 'Not Provided',
         'Hearing Type': 'Not Provided',
         'Hearing Channel': 'Not Provided',
+        'Title': titlename,
       };
 
       data.push(rowData);
@@ -206,7 +200,7 @@ function extractDataTemplate4($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4a($, table, courtName, courtDate) {
-  let titlename = ''
+  let titlename = '';
   // pegar o título com base no template
   titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
@@ -227,7 +221,7 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
           let lineText = $(p).text().trim().replace(/\s+/g, ' ');
           if (lineText) cellLines.push(lineText); // Adicionar apenas se não estiver vazio
         });
-      
+
       // Concatenar as linhas individuais em uma string final para a célula
       cellsText.push(cellLines.join(' | ')); // Usar ' | ' para separar linhas internas
     });
@@ -263,25 +257,36 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
       if (cellsText.every((text) => text === '')) return;
       function splitAtFirstPipe(text) {
         const [firstPart, ...rest] = text.split(/ \| /);
-        return [firstPart.trim(), rest.join(" | ").trim()];
+        return [firstPart.trim(), rest.join(' | ').trim()];
       }
       const time = cellsText[0] || '';
       const claimNumber = cellsText[1] || '';
 
-      if (cellsText.length === 3){
+      let claimant = '';
+      let defendant = '';
+
+      if (cellsText.length === 3) {
         const claimantANDdefendant = cellsText[2] || '';
         [claimant, defendant] = splitAtFirstPipe(claimantANDdefendant);
-        if (defendant === ""){ defendant = "Not Provided"};
-        if (claimant === ""){ claimant = "Not Provided"};
-      }
+        if (claimant === 'Phoenix  Community  Housing | Association | (Bellingham & | Downham) | Limited') {
+          claimant = claimant.replace(/\|/g, '');
+          defendant = defendant.replace(/\|/g, '');
+        }
 
-      else{
+        if (defendant === '') {
+          defendant = 'Not Provided';
+        }
+        if (claimant === '') {
+          claimant = 'Not Provided';
+        }
+      } else {
         claimant = cellsText[2] || 'Not Provided';
         defendant = cellsText[3] || 'Not Provided';
+        claimant = claimant.replace(/\|/g, '');
+        defendant = defendant.replace(/\|/g, '');
       }
-      
-      
-      console.log(cellsText)
+
+      console.log(cellsText);
       // Logs para depuração
       console.log(`Linha ${i}:`, {
         claimNumber,
@@ -292,27 +297,26 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
         const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
         return match ? match[1].trim() : null;
       }
-      
+
       courtName = extractCourtLocation(titlename);
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
-        
+
         // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
         const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
-      
+
         // Cria um objeto Date
         const date = new Date(cleanDatePart);
-      
+
         // Formata a data como dd/mm/yyyy
         const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
         const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
         const year = date.getFullYear();
-      
+
         return `${day}/${month}/${year}`;
       }
       const rowData = {
-        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || '',
@@ -321,6 +325,7 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
         'Duration': 'Not Provided',
         'Hearing Type': 'Not Provided',
         'Hearing Channel': 'Not Provided',
+        'Title': titlename,
       };
 
       data.push(rowData);
@@ -340,7 +345,7 @@ function extractDataTemplate4a($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate5($, table, courtName, courtDate) {
-  let titlename = ''
+  let titlename = '';
   // pegar o título com base no template
   titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
@@ -361,7 +366,7 @@ function extractDataTemplate5($, table, courtName, courtDate) {
       cellText = cellText.replace(/\s+/g, ' ');
       cellsText.push(cellText);
     });
-    
+
     // Ignora linhas que contêm "Party Name" ou "Parties Suppressed"
     if (cellsText.some((text) => /party\s*name|parties\s*suppressed/i.test(text))) {
       return;
@@ -389,40 +394,44 @@ function extractDataTemplate5($, table, courtName, courtDate) {
 
         logicalIndex += colspan;
       });
-      
+
       console.log('Cabeçalhos encontrados (template5):', headersIndex);
     } else if (cellsText.length > 1 && Object.keys(headersIndex).length > 0) {
       if (cellsText.every((text) => text === '')) return;
-      
+
       // Captura apenas as linhas que contêm "Possession" no Case Details
       const hearingType = cellsText[5];
       if (!/possession/i.test(hearingType)) return;
       const startTime = cellsText[2];
       const duration = cellsText[3];
-      let caseDetails = cellsText[4]
-      const claimNumber = caseDetails.split(" ")[0];
+      let caseDetails = cellsText[4];
+      const claimNumber = caseDetails.split(' ')[0];
       const hearingChannel = cellsText[6];
 
-      //verificando se clainumber é válido
-      if (claimNumber === "PCOL") return;
+      // Verificando se claimNumber é válido
+      if (claimNumber === 'PCOL') return;
 
-      
-      caseDetails = caseDetails.replace(/^[A-Z0-9]+ /, "")
-      
+      caseDetails = caseDetails.replace(/^[A-Z0-9]+ /, '');
+
       let claimant = '';
       let defendant = '';
 
       // Separar o texto do 'caseDetails' para identificar o 'Claimant' e 'Defendant'
-      if (/\s+(v|vs)\s+/i.test(caseDetails) ||/\s+(-v-|-vs-)\s+/i.test(caseDetails)){
+      if (/\s+(v|vs)\s+/i.test(caseDetails) || /\s+(-v-|-vs-)\s+/i.test(caseDetails)) {
         let parts = caseDetails.split(/\s+(v|vs)\s+/i);
-        if (/\s+(-v-|-vs-)\s+/i.test(caseDetails)){parts = caseDetails.split(/\s+(-v-|-vs-)\s+/i)}
+        if (/\s+(-v-|-vs-)\s+/i.test(caseDetails)) {
+          parts = caseDetails.split(/\s+(-v-|-vs-)\s+/i);
+        }
         if (parts.length >= 2) {
           claimant = parts[0].trim();
-          
           defendant = parts[2].trim();
+          claimant = claimant.replace(/\|/g, '');
+          defendant = defendant.replace(/\|/g, '');
         } else {
           claimant = parts[0].trim();
           defendant = 'Not Provided';
+          claimant = claimant.replace(/\|/g, '');
+          defendant = defendant.replace(/\|/g, '');
         }
       } else {
         claimant = 'Not Provided';
@@ -442,29 +451,28 @@ function extractDataTemplate5($, table, courtName, courtDate) {
         const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
         return match ? match[1].trim() : null;
       }
-      
+
       courtName = extractCourtLocation(titlename);
-      
+
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
-        
+
         // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
         const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
-      
+
         // Cria um objeto Date
         const date = new Date(cleanDatePart);
-      
+
         // Formata a data como dd/mm/yyyy
         const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
         const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
         const year = date.getFullYear();
-      
+
         return `${day}/${month}/${year}`;
       }
-      
+
       const rowData = {
-        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': claimNumber || 'Not Provided',
@@ -473,6 +481,7 @@ function extractDataTemplate5($, table, courtName, courtDate) {
         'Duration': duration || 'Not Provided',
         'Hearing Type': hearingType || 'Not Provided',
         'Hearing Channel': hearingChannel || 'Not Provided',
+        'Title': titlename,
       };
 
       data.push(rowData);
@@ -492,7 +501,7 @@ function extractDataTemplate5($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate7($, table, courtName, courtDate) {
-  let titlename = ''
+  let titlename = '';
   // pegar o título com base no template
   titlename = $('title').text().trim(); // Seleciona o título para o template
   const data = [];
@@ -531,7 +540,7 @@ function extractDataTemplate7($, table, courtName, courtDate) {
           headersIndex.caseName = logicalIndex;
         } else if (/^case\s*type$/i.test(headerText)) {
           headersIndex.caseType = logicalIndex;
-        } else if (/^duration$/i.test(headerText)) {  // Corrigido para capturar corretamente "Duration"
+        } else if (/^duration$/i.test(headerText)) {
           headersIndex.duration = logicalIndex;
         } else if (/^hearing\s*type$/i.test(headerText)) {
           headersIndex.hearingType = logicalIndex;
@@ -550,15 +559,14 @@ function extractDataTemplate7($, table, courtName, courtDate) {
       const caseRef = cellsText[headersIndex.caseRef] || '';
       const caseName = cellsText[3];
       const caseType = cellsText[headersIndex.caseType] || '';
-      const duration = cellsText[headersIndex.hearingType] || '';  
-      const hearingType = cellsText[5];  
+      const duration = cellsText[headersIndex.hearingType] || '';
+      const hearingType = cellsText[5];
       const hearingPlatform = cellsText[6];
 
       if (!/posse|possession/i.test(caseType)) {
         return;
       }
 
-      
       let claimant = '';
       let defendant = '';
 
@@ -567,9 +575,12 @@ function extractDataTemplate7($, table, courtName, courtDate) {
         if (parts.length >= 2) {
           claimant = parts[0].trim();
           defendant = parts[2].trim();
+          claimant = claimant.replace(/\|/g, '');
+          defendant = defendant.replace(/\|/g, '');
         } else {
           claimant = parts[0].trim();
           defendant = 'Not Provided';
+          claimant = claimant.replace(/\|/g, '');
         }
       } else {
         claimant = 'Not Provided';
@@ -590,29 +601,28 @@ function extractDataTemplate7($, table, courtName, courtDate) {
         const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
         return match ? match[1].trim() : null;
       }
-      
+
       courtName = extractCourtLocation(titlename);
-      
+
       function formatCourtDate(courtDatestr) {
         // Extrai a parte da data da string
         const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
-        
+
         // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
         const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
-      
+
         // Cria um objeto Date
         const date = new Date(cleanDatePart);
-      
+
         // Formata a data como dd/mm/yyyy
         const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
         const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
         const year = date.getFullYear();
-      
+
         return `${day}/${month}/${year}`;
       }
 
       const rowData = {
-        'Title': titlename,
         'Court Name': courtName || '',
         'Court Date': formatCourtDate(courtDate) || '',
         'Claim Number': caseRef || '',
@@ -621,6 +631,7 @@ function extractDataTemplate7($, table, courtName, courtDate) {
         'Duration': duration || 'Not Provided',
         'Hearing Type': hearingType || 'Not Provided',
         'Hearing Channel': hearingPlatform || 'Not Provided',
+        'Title': titlename,
       };
 
       data.push(rowData);
@@ -630,9 +641,8 @@ function extractDataTemplate7($, table, courtName, courtDate) {
   return data;
 }
 
-
 /**
- * Função para extrair dados da tabela para outros templates (exemplo: template5).
+ * Função para extrair dados da tabela para outros templates.
  * Atualmente retorna um array vazio, mas pode ser expandida conforme necessário.
  *
  * @param {object} $ - Instância do cheerio.
@@ -643,7 +653,7 @@ function extractDataTemplate7($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplateOther($, table, template, courtName, courtDate) {
-  let titlename = ''
+  let titlename = '';
   // pegar o título com base no template
   titlename = $('title').text().trim(); // Seleciona o título para o template
   // Implementar lógica específica para outros templates aqui, se necessário
@@ -676,19 +686,14 @@ function scrapeDataFromHtml(filePath) {
 
   let courtName = '';
   let courtDate = '';
- 
 
   $('p').each((i, elem) => {
     const text = $(elem).text().trim();
     if (/court at/i.test(text) || /sitting at/i.test(text)) {
-      if(/court at/i.test(text)){  parts = text.split(/court at/i);}
-      else if (/sitting at/i.test(text)){  parts = text.split(/sitting at/i);}
-      console.log(parts)
+      const parts = text.split(/court at|sitting at/i);
       if (parts.length > 1) {
         courtName = parts[1].trim();
-        console.log(courtName)
       }
-      
     }
 
     const datePattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}$/i;
@@ -716,17 +721,14 @@ function scrapeDataFromHtml(filePath) {
     // Altere o seletor para que reconheça o cabeçalho agrupado
     tables = $('table').filter(function () {
       const tableText = normalizeText($(this).text());
-    
+
       // Ajuste para detectar um número de processo com pelo menos quatro caracteres seguido de nomes
       const hasClaimPattern = /\b[a-z0-9]{4,}\b\s+[a-z]+\s+[a-z]+/i.test(tableText);
-      console.log(/time\s+claim\s*number\s+claimant\s+defendant/i.test(tableText) || // Verifica cabeçalho explícito
-        hasClaimPattern)
       return (
-        /time\s+claim\s*number\s+claimant\s+defendant/i.test(tableText) || // Verifica cabeçalho explícito
-        hasClaimPattern // Detecta padrão de número de processo seguido por nomes
+        /time\s+claim\s*number\s+claimant\s+defendant/i.test(tableText) ||
+        hasClaimPattern
       );
     });
-
   } else if (template === 'template7') {
     tables = $('table').filter(function () {
       const tableText = $(this).text().toLowerCase();
@@ -756,12 +758,12 @@ function scrapeDataFromHtml(filePath) {
     `Total de tabelas encontradas no arquivo ${filePath}: ${tables.length}`
   );
 
-  const processedTables = new Set(); // Controlar tabelas processadas
-  const processedClaimNumbers = new Set(); // Controlar `Claim Numbers` já extraídos
+  const processedTables = new Set();
+  const processedClaimNumbers = new Set();
 
   tables.each((tableIndex, tableElem) => {
     if (!processedTables.has(tableElem)) {
-      processedTables.add(tableElem); // Marca a tabela como processada
+      processedTables.add(tableElem);
       console.log(`Processando tabela ${tableIndex + 1} de ${tables.length}`);
       const table = $(tableElem);
 
@@ -798,18 +800,15 @@ function scrapeDataFromHtml(filePath) {
   return data;
 }
 
-
 /**
  * Função para salvar dados em um arquivo CSV.
  *
  * @param {Array} data - Array de objetos com os dados a serem salvos.
  * @param {string} outputPath - Caminho para o arquivo CSV de saída.
- * @param {string} originalFilePath - Caminho do arquivo HTML original.
  */
-function saveToCsv(data, outputPath, originalFilePath) {
+function saveToCsv(data, outputPath) {
   try {
     const headers = [
-      'Title',
       'Court Name',
       'Court Date',
       'Claim Number',
@@ -818,25 +817,11 @@ function saveToCsv(data, outputPath, originalFilePath) {
       'Duration',
       'Hearing Type',
       'Hearing Channel',
+      'Title',
     ];
 
     if (data.length === 0) {
       console.warn('Nenhum dado para salvar no arquivo CSV.');
-
-      // Verifica se `originalFilePath` está definido antes de mover o arquivo
-      if (originalFilePath) {
-        const unprocessedDir = path.join(__dirname, 'unprocessed_files');
-        if (!fs.existsSync(unprocessedDir)) {
-          fs.mkdirSync(unprocessedDir);
-        }
-
-        // Move o arquivo original para a pasta `unprocessed_files`
-        const fileName = path.basename(originalFilePath);
-        const newFilePath = path.join(unprocessedDir, fileName);
-        fs.renameSync(originalFilePath, newFilePath);
-
-        console.log(`Arquivo movido para ${newFilePath}`);
-      }
       return;
     }
 
@@ -860,16 +845,214 @@ function saveToCsv(data, outputPath, originalFilePath) {
   }
 }
 
+/**
+ * Função para baixar arquivos HTML do site, incluindo login.
+ */
+async function downloadHtmlFiles() {
+  const browser = await puppeteer.launch({ headless: true }); // Defina headless: false para visualizar a navegação
+  const page = await browser.newPage();
+  await page.goto('https://www.courtserve.net/courtlists/current/county/indexv2county.php', { waitUntil: 'networkidle2', timeout: 60000 });
+
+  // Função para realizar o login
+  async function performLogin(page) {
+    // Verificar se o usuário já está logado
+    const isLoggedIn = await page.evaluate(() => {
+      const loggedInUser = document.querySelector('#logged-in-user');
+      // Se o elemento existe e contém texto, o usuário está logado
+      return loggedInUser && loggedInUser.innerText.trim() !== '';
+    });
+
+    if (!isLoggedIn) {
+      // Usuário não está logado, verificar se o formulário de login está presente
+      const loginFormExists = await page.$('#login-form') !== null;
+
+      if (loginFormExists) {
+        // Preencha o email e a senha
+        await page.type('#login-form input[name="username"]', 'info@oresidentials.co.uk');
+        await page.type('#login-form input[name="password"]', 'Smith12345');
+
+        // Clique no botão de login
+        await Promise.all([
+          page.click('#login-form input[type="submit"]'),
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
+        ]);
+
+        // Após o login, verifique novamente se o usuário está logado
+        const loginSuccessful = await page.evaluate(() => {
+          const loggedInUser = document.querySelector('#logged-in-user');
+          return loggedInUser && loggedInUser.innerText.trim() !== '';
+        });
+
+        if (!loginSuccessful) {
+          console.error('Falha no login. Verifique suas credenciais.');
+          await browser.close();
+          throw new Error('Falha no login');
+        }
+      } else {
+        console.error('Formulário de login não encontrado.');
+        await browser.close();
+        throw new Error('Formulário de login não encontrado');
+      }
+    } else {
+      console.log('Usuário já está logado.');
+    }
+  }
+
+  // Realiza o login inicialmente
+  await performLogin(page);
+
+  // Aguarde o carregamento da tabela
+  await page.waitForSelector('table', { timeout: 60000 });
+
+  // Extrair os links da tabela
+  const links = await page.evaluate(() => {
+    const links = [];
+    const table = document.querySelector('table');
+    if (table) {
+      const aTags = Array.from(table.querySelectorAll('a'));
+      aTags.forEach(a => {
+        if (a.href && a.href.includes('viewcourtlistv2.php')) {
+          // Verifica se o link é completo, se não for, prefixa com o domínio
+          const fullLink = a.href.startsWith('http') ? a.href : 'https://www.courtserve.net' + a.getAttribute('href');
+          links.push(fullLink);
+        }
+      });
+    }
+    return links;
+  });
+
+  console.log('Links encontrados:', links);
+
+  const htmlFilesDir = path.join(__dirname, 'html_files');
+  if (!fs.existsSync(htmlFilesDir)) {
+    fs.mkdirSync(htmlFilesDir);
+  }
+
+  // Função para navegar com retentativas e relogar se necessário
+  async function navigateWithRetries(page, url, options, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await page.goto(url, options);
+        return; // Navegação bem-sucedida
+      } catch (error) {
+        console.warn(`Tentativa ${attempt} falhou ao navegar para ${url}: ${error.message}`);
+
+        // Verificar se o formulário de login está presente
+        const loginFormExists = await page.$('#login-form') !== null;
+        if (loginFormExists) {
+          console.log('Formulário de login encontrado. Realizando login novamente.');
+          await performLogin(page);
+
+          // Tentar navegar novamente após o login
+          continue;
+        }
+
+        if (attempt === maxRetries) {
+          throw error; // Lança o erro após a última tentativa
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    console.log(`Processando link ${i + 1}/${links.length}: ${link}`);
+
+    // Navegar para o link inicial com retentativas e relogar se necessário
+    try {
+      await navigateWithRetries(page, link, { waitUntil: 'networkidle2', timeout: 60000 });
+    } catch (error) {
+      console.error(`Erro ao navegar para ${link}: ${error.message}`);
+      continue; // Pula para o próximo link
+    }
+
+    // Aguarde o carregamento do link dentro de div#box2
+    try {
+      await page.waitForSelector('#box2 a', { timeout: 10000 });
+    } catch (error) {
+      console.warn(`Link dentro de #box2 não encontrado em ${link}: ${error.message}`);
+      continue; // pula para o próximo link
+    }
+
+    // Obtenha o link dentro de div#box2
+    const newTabLink = await page.evaluate(() => {
+      const box2Div = document.querySelector('#box2');
+      if (box2Div) {
+        const linkElement = box2Div.querySelector('a');
+        if (linkElement) {
+          const href = linkElement.getAttribute('href');
+          return href.startsWith('http') ? href : 'https://www.courtserve.net' + href;
+        }
+      }
+      return null;
+    });
+
+    if (newTabLink) {
+      // Abra uma nova página para a nova aba
+      const newPage = await browser.newPage();
+
+      // Navegar para o newTabLink com retentativas e relogar se necessário
+      try {
+        await navigateWithRetries(newPage, newTabLink, { waitUntil: 'networkidle2', timeout: 60000 });
+      } catch (error) {
+        console.error(`Erro ao navegar para ${newTabLink}: ${error.message}`);
+        await newPage.close();
+        continue; // Pula para o próximo link
+      }
+
+      const htmlContent = await newPage.content();
+
+      // Extrair o título da página para usar como nome de arquivo
+      const $ = cheerio.load(htmlContent);
+      let title = $('title').text().trim();
+
+      // Substituir caracteres inválidos no nome do arquivo
+      title = title.replace(/[<>:"/\\|?*]+/g, '');
+      // Limitar o tamanho do nome do arquivo para evitar problemas no sistema de arquivos
+      title = title.substring(0, 200);
+
+      // Adicionar extensão .html se não estiver presente
+      if (!title.toLowerCase().endsWith('.html')) {
+        title += '.html';
+      }
+
+      const fileName = title;
+      const filePath = path.join(htmlFilesDir, fileName);
+
+      // Verificar se o arquivo já existe e, se sim, adicionar um sufixo para evitar sobrescrita
+      let uniqueFilePath = filePath;
+      let counter = 1;
+      while (fs.existsSync(uniqueFilePath)) {
+        const parsedPath = path.parse(filePath);
+        uniqueFilePath = path.join(parsedPath.dir, `${parsedPath.name}_${counter}${parsedPath.ext}`);
+        counter++;
+      }
+
+      // Salvar o conteúdo HTML na pasta 'html_files' com o nome do título
+      fs.writeFileSync(uniqueFilePath, htmlContent);
+      console.log(`Salvo ${path.basename(uniqueFilePath)}`);
+
+      await newPage.close();
+    } else {
+      console.warn(`Link da lista completa não encontrado para ${link}`);
+    }
+  }
+
+  await browser.close();
+}
 
 /**
  * Função principal para executar a extração e salvamento.
  */
-function main() {
+async function main() {
   const inputDirectory = './html_files';
   const outputFile = 'output.csv';
   const allData = [];
 
-  // Verificar se o diretório de entrada existe s
+  // Baixar arquivos HTML do site
+  await downloadHtmlFiles();
+
+  // Verificar se o diretório de entrada existe
   if (!fs.existsSync(inputDirectory)) {
     console.error(`Diretório de entrada não encontrado: ${inputDirectory}`);
     return;
@@ -882,14 +1065,36 @@ function main() {
       // Extrai dados do arquivo HTML
       const fileData = scrapeDataFromHtml(filePath);
 
-      // Salva os dados do arquivo específico ou move para a pasta `unprocessed_files` se vazio
-      saveToCsv(fileData, outputFile, filePath);
-      allData.push(...fileData);
+      if (fileData.length === 0) {
+        console.warn(`Nenhum dado extraído de ${file}. Movendo para a pasta 'unprocessed_files'.`);
+        const unprocessedDir = path.join(__dirname, 'unprocessed_files');
+        if (!fs.existsSync(unprocessedDir)) {
+          fs.mkdirSync(unprocessedDir);
+        }
+        const destinationPath = path.join(unprocessedDir, file);
+        fs.renameSync(filePath, destinationPath);
+        console.log(`Arquivo movido para ${destinationPath}`);
+      } else {
+        allData.push(...fileData);
+
+        // Move o arquivo processado para a pasta 'checked_files'
+        const checkedFilesDir = path.join(__dirname, 'checked_files');
+        if (!fs.existsSync(checkedFilesDir)) {
+          fs.mkdirSync(checkedFilesDir);
+        }
+        const destinationPath = path.join(checkedFilesDir, file);
+        fs.renameSync(filePath, destinationPath);
+        console.log(`Arquivo ${file} movido para ${destinationPath}`);
+      }
     }
   });
 
   // Salva todos os dados no arquivo CSV final
-  saveToCsv(allData, outputFile, null);
+  if (allData.length > 0) {
+    saveToCsv(allData, outputFile);
+  } else {
+    console.log('Nenhum dado extraído de nenhum arquivo.');
+  }
 }
 
 main(); // Executa a função principal
