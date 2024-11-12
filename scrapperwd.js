@@ -200,273 +200,275 @@ function extractDataTemplate4($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4a($, table, courtName, courtDate) {
-  let titlename = $('title').text().trim();
-  const data = [];
-  const rows = table.find('tr');
-
-  let headersIndex = {};
-  let currentCase = null; // Para armazenar o caso atual
-  let lastTime = ''; // Para armazenar o último Time encontrado
-
-  function normalizeText(text) {
-    return text.replace(/\s+/g, ' ').trim().toLowerCase();
-  }
-
-  function extractCourtLocation(titlename) {
-    const match = titlename.match(/CourtServe:\s*(.*?)\s*,/i);
-    if (match) {
-      return match[1].trim();
-    } else {
-      // Tentar outra correspondência
-      const matchAlt = titlename.match(/In The County Court at\s*(.*)/i);
-      if (matchAlt) {
-        return matchAlt[1].trim();
-      }
+    let titlename = $('title').text().trim();
+    const data = [];
+    const rows = table.find('tr');
+  
+    let headersIndex = {};
+    let currentCase = null; // Para armazenar o caso atual
+    let lastTime = ''; // Para armazenar o último Time encontrado
+  
+    function normalizeText(text) {
+      return text.replace(/\s+/g, ' ').trim().toLowerCase();
     }
-    return '';
-  }
-
-  function formatCourtDate(courtDatestr) {
-    if (!courtDatestr) {
-      // Tentar extrair a data do título ou do conteúdo
-      const dateMatch = titlename.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
-      if (dateMatch) {
-        courtDatestr = dateMatch[1];
+  
+    function extractCourtLocation(titlename) {
+      const match = titlename.match(/CourtServe:\s*(.*?)\s*,/i);
+      if (match) {
+        return match[1].trim();
       } else {
-        const dateMatchAlt = titlename.match(/\b([A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4})\b/);
-        if (dateMatchAlt) {
-          courtDatestr = dateMatchAlt[1];
+        // Tentar outra correspondência
+        const matchAlt = titlename.match(/In The County Court at\s*(.*)/i);
+        if (matchAlt) {
+          return matchAlt[1].trim();
         }
       }
-    }
-
-    // Agora, converter courtDatestr para o formato "dd/mm/aaaa"
-    let date;
-    if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(courtDatestr)) {
-      // Se já estiver no formato dd/mm/aaaa, converter diretamente
-      const parts = courtDatestr.split('/');
-      const day = parts[0].padStart(2, '0');
-      const month = parts[1].padStart(2, '0');
-      let year = parts[2];
-      if (year.length === 2) {
-        year = '20' + year;
-      }
-      date = new Date(`${year}-${month}-${day}`);
-    } else if (/[A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}/.test(courtDatestr)) {
-      // Formato textual, por exemplo, "Tuesday, 12 November 2024"
-      date = new Date(courtDatestr);
-    } else {
-      // Tentativa de criar a data diretamente
-      date = new Date(courtDatestr);
-    }
-
-    if (isNaN(date)) {
       return '';
     }
-
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-
-    return `${day}/${month}/${year}`;
-  }
-
-  // Obter courtName e courtDate do título se estiverem vazios
-  if (!courtName) {
-    courtName = extractCourtLocation(titlename);
-  }
-  if (!courtDate) {
-    courtDate = formatCourtDate(courtDate);
-  }
-
-  // Iterar pelas linhas da tabela
-  rows.each((i, row) => {
-    let cells = $(row).find('th, td');
-    let cellsText = [];
-    let logicalIndexes = []; // Para mapear o índice lógico de cada célula
-
-    let logicalIndex = 0;
-
-    cells.each((j, cell) => {
-      let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
-      cellsText.push(cellText);
-
-      let colspan = parseInt($(cell).attr('colspan')) || 1;
-      logicalIndexes.push({ index: logicalIndex, colspan: colspan });
-
-      logicalIndex += colspan;
-    });
-
-    // Verificar se estamos no novo formato
-    const isNewFormat = cellsText.some((text) => /^claim\s+\w+:/i.test(text));
-
-    if (isNewFormat) {
-      // Lógica para o novo formato
-      cellsText.forEach((cellText) => {
-        // Extrair o Time se presente
-        const timeMatch = cellText.match(/^(\d{1,2}\.\d{2})$/);
-        if (timeMatch) {
-          lastTime = timeMatch[1];
-        }
-
-        // Extrair Claim Number, Claimant e Defendant
-        const claimMatch = cellText.match(/^Claim\s+(\w+):\s*(.*?)\s+versus\s+(.*)/i);
-        if (claimMatch) {
-          const claimNumber = claimMatch[1];
-          const claimant = claimMatch[2];
-          const defendant = claimMatch[3];
-
-          // Salvar o caso atual se houver
-          if (currentCase) {
-            data.push({
-              'Court Name': courtName || '',
-              'Court Date': courtDate || '',
-              'Claim Number': currentCase.claimNumber || '',
-              'Claimant': currentCase.claimant.trim() || '',
-              'Defendant': currentCase.defendant.trim() || '',
-              'Duration': 'Not Provided',
-              'Hearing Type': 'Not Provided',
-              'Hearing Channel': 'Not Provided',
-              'Title': titlename,
-            });
-          }
-
-          // Iniciar um novo caso
-          currentCase = {
-            time: lastTime || '',
-            claimNumber: claimNumber,
-            claimant: claimant,
-            defendant: defendant,
-          };
-        }
-      });
-    } else {
-      // Lógica para o formato original
-      // Identificar os índices dos cabeçalhos
-      if (
-        cellsText.some((text) => /^time$/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /claim\s*number/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /^claimant$/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /^(defendant|respondent)$/i.test(normalizeText(text)))
-      ) {
-        // Mapear os índices dos cabeçalhos
-        logicalIndex = 0;
-
-        cells.each((j, cell) => {
-          let headerText = normalizeText($(cell).text());
-          let colspan = parseInt($(cell).attr('colspan')) || 1;
-
-          if (/^time$/i.test(headerText)) {
-            headersIndex.time = logicalIndex;
-          } else if (/^claim\s*number$/i.test(headerText)) {
-            headersIndex.claimNumber = logicalIndex;
-          } else if (/^claimant$/i.test(headerText)) {
-            headersIndex.claimant = logicalIndex;
-          } else if (/^(defendant|respondent)$/i.test(headerText)) {
-            headersIndex.defendant = logicalIndex;
-          }
-
-          logicalIndex += colspan;
-        });
-
-        console.log('Cabeçalhos encontrados (template4a):', headersIndex);
-      } else if (cellsText.length > 0 && Object.keys(headersIndex).length > 0) {
-        // Linha de dados
-        if (cellsText.every((text) => text === '')) return;
-
-        // Mapear os dados considerando o colspan
-        let rowData = {};
-        let cellLogicalIndex = 0;
-
-        cells.each((j, cell) => {
-          let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
-          let colspan = parseInt($(cell).attr('colspan')) || 1;
-
-          // Atribuir o texto da célula aos campos corretos
-          for (let k = 0; k < colspan; k++) {
-            let currentLogicalIndex = cellLogicalIndex + k;
-
-            if (currentLogicalIndex === headersIndex.time) {
-              rowData.time = cellText;
-            } else if (currentLogicalIndex === headersIndex.claimNumber) {
-              rowData.claimNumber = cellText;
-            } else if (currentLogicalIndex === headersIndex.claimant) {
-              if (!rowData.claimant) rowData.claimant = cellText;
-              else rowData.claimant += ' ' + cellText;
-            } else if (currentLogicalIndex === headersIndex.defendant) {
-              if (!rowData.defendant) rowData.defendant = cellText;
-              else rowData.defendant += ' ' + cellText;
-            }
-          }
-
-          cellLogicalIndex += colspan;
-        });
-
-        // Se a linha tiver um novo Time, atualizar lastTime
-        if (rowData.time) {
-          lastTime = rowData.time;
-        } else if (lastTime) {
-          rowData.time = lastTime;
-        }
-
-        // Verificar se esta linha inicia um novo caso com base no Claim Number
-        let isNewCase = rowData.claimNumber;
-
-        if (isNewCase) {
-          // Salvar o caso atual se houver
-          if (currentCase) {
-            data.push({
-              'Court Name': courtName || '',
-              'Court Date': courtDate || '',
-              'Claim Number': currentCase.claimNumber || '',
-              'Claimant': currentCase.claimant.trim() || '',
-              'Defendant': currentCase.defendant.trim() || '',
-              'Duration': 'Not Provided',
-              'Hearing Type': 'Not Provided',
-              'Hearing Channel': 'Not Provided',
-              'Title': titlename,
-            });
-          }
-
-          // Iniciar um novo caso
-          currentCase = {
-            time: rowData.time || '',
-            claimNumber: rowData.claimNumber || '',
-            claimant: rowData.claimant || '',
-            defendant: rowData.defendant || '',
-          };
+  
+    function formatCourtDate(courtDatestr) {
+      if (!courtDatestr) {
+        // Tentar extrair a data do título ou do conteúdo
+        const dateMatch = titlename.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+        if (dateMatch) {
+          courtDatestr = dateMatch[1];
         } else {
-          // Continuação dos dados do caso atual
-          if (currentCase) {
-            if (rowData.claimant) {
-              currentCase.claimant += ' ' + rowData.claimant;
+          const dateMatchAlt = titlename.match(/\b([A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4})\b/);
+          if (dateMatchAlt) {
+            courtDatestr = dateMatchAlt[1];
+          }
+        }
+      }
+  
+      // Agora, converter courtDatestr para o formato "dd/mm/aaaa"
+      let date;
+      if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(courtDatestr)) {
+        // Se já estiver no formato dd/mm/aaaa, converter diretamente
+        const parts = courtDatestr.split('/');
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        let year = parts[2];
+        if (year.length === 2) {
+          year = '20' + year;
+        }
+        date = new Date(`${year}-${month}-${day}`);
+      } else if (/[A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}/.test(courtDatestr)) {
+        // Formato textual, por exemplo, "Tuesday, 12 November 2024"
+        date = new Date(courtDatestr);
+      } else {
+        // Tentativa de criar a data diretamente
+        date = new Date(courtDatestr);
+      }
+  
+      if (isNaN(date)) {
+        return '';
+      }
+  
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+  
+      return `${day}/${month}/${year}`;
+    }
+  
+    // Obter courtName e courtDate do título se estiverem vazios
+    if (!courtName) {
+      courtName = extractCourtLocation(titlename);
+    }
+    if (!courtDate) {
+      courtDate = formatCourtDate(courtDate);
+    }
+  
+    // Iterar pelas linhas da tabela
+    rows.each((i, row) => {
+      let cells = $(row).find('th, td');
+      let cellsText = [];
+      let logicalIndexes = []; // Para mapear o índice lógico de cada célula
+  
+      let logicalIndex = 0;
+  
+      cells.each((j, cell) => {
+        let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
+        cellsText.push(cellText);
+  
+        let colspan = parseInt($(cell).attr('colspan')) || 1;
+        logicalIndexes.push({ index: logicalIndex, colspan: colspan });
+  
+        logicalIndex += colspan;
+      });
+  
+      // Verificar se estamos no novo formato
+      const isNewFormat = cellsText.some((text) => /^claim\s+\w+:/i.test(text));
+  
+      if (isNewFormat) {
+        // Lógica para o novo formato
+        cellsText.forEach((cellText) => {
+          // Extrair o Time se presente
+          const timeMatch = cellText.match(/^(\d{1,2}\.\d{2})$/);
+          if (timeMatch) {
+            lastTime = timeMatch[1];
+          }
+  
+          // Extrair Claim Number, Claimant e Defendant
+          const claimMatch = cellText.match(/^Claim\s+(\w+):\s*(.*?)\s+versus\s+(.*)/i);
+          if (claimMatch) {
+            const claimNumber = claimMatch[1];
+            const claimant = claimMatch[2];
+            const defendant = claimMatch[3];
+  
+            // Salvar o caso atual se houver
+            if (currentCase) {
+              data.push({
+                'Court Name': courtName || '',
+                'Court Date': courtDate || '',
+                'Claim Number': currentCase.claimNumber || '',
+                'Claimant': currentCase.claimant.trim() || '',
+                'Defendant': currentCase.defendant.trim() || '',
+                'Duration': 'Not Provided',
+                'Hearing Type': 'Not Provided',
+                'Hearing Channel': 'Not Provided',
+                'Title': titlename,
+              });
             }
-            if (rowData.defendant) {
-              currentCase.defendant += ' ' + rowData.defendant;
+  
+            // Iniciar um novo caso
+            currentCase = {
+              time: lastTime || '',
+              claimNumber: claimNumber,
+              claimant: claimant,
+              defendant: defendant,
+            };
+          }
+        });
+      } else {
+        // Lógica para o formato original
+        // Identificar os índices dos cabeçalhos
+        if (
+          cellsText.some((text) => /^time$/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /claim\s*number/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /^claimant$/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /^(defendant|respondent)$/i.test(normalizeText(text)))
+        ) {
+          // Mapear os índices dos cabeçalhos
+          logicalIndex = 0;
+  
+          cells.each((j, cell) => {
+            let headerText = normalizeText($(cell).text());
+            let colspan = parseInt($(cell).attr('colspan')) || 1;
+  
+            if (/^time$/i.test(headerText)) {
+              headersIndex.time = logicalIndex;
+            } else if (/^claim\s*number$/i.test(headerText)) {
+              headersIndex.claimNumber = logicalIndex;
+            } else if (/^claimant$/i.test(headerText)) {
+              headersIndex.claimant = logicalIndex;
+            } else if (/^(defendant|respondent)$/i.test(headerText)) {
+              headersIndex.defendant = logicalIndex;
+            }
+  
+            logicalIndex += colspan;
+          });
+  
+          console.log('Cabeçalhos encontrados (template4a):', headersIndex);
+        } else if (cellsText.length > 0 && Object.keys(headersIndex).length > 0) {
+          // Linha de dados
+          if (cellsText.every((text) => text === '')) return;
+  
+          // Mapear os dados considerando o colspan
+          let rowData = {};
+          let cellLogicalIndex = 0;
+  
+          cells.each((j, cell) => {
+            let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
+            let colspan = parseInt($(cell).attr('colspan')) || 1;
+  
+            // Atribuir o texto da célula aos campos corretos
+            for (let k = 0; k < colspan; k++) {
+              let currentLogicalIndex = cellLogicalIndex + k;
+  
+              if (currentLogicalIndex === headersIndex.time) {
+                rowData.time = cellText;
+              } else if (currentLogicalIndex === headersIndex.claimNumber) {
+                rowData.claimNumber = cellText;
+              } else if (currentLogicalIndex === headersIndex.claimant) {
+                if (!rowData.claimant) rowData.claimant = cellText;
+                else rowData.claimant += ' ' + cellText;
+              } else if (currentLogicalIndex === headersIndex.defendant) {
+                if (!rowData.defendant) rowData.defendant = cellText;
+                else rowData.defendant += ' ' + cellText;
+              }
+            }
+  
+            cellLogicalIndex += colspan;
+          });
+  
+          // Se a linha tiver um novo Time, atualizar lastTime
+          if (rowData.time) {
+            lastTime = rowData.time;
+          } else if (lastTime) {
+            rowData.time = lastTime;
+          }
+  
+          // Verificar se esta linha inicia um novo caso com base no Claim Number
+          let isNewCase = rowData.claimNumber;
+  
+          if (isNewCase) {
+            // Salvar o caso atual se houver
+            if (currentCase) {
+              data.push({
+                'Court Name': courtName || '',
+                'Court Date': courtDate || '',
+                'Claim Number': currentCase.claimNumber || '',
+                'Claimant': currentCase.claimant.trim() || '',
+                'Defendant': currentCase.defendant.trim() || '',
+                'Duration': 'Not Provided',
+                'Hearing Type': 'Not Provided',
+                'Hearing Channel': 'Not Provided',
+                'Title': titlename,
+              });
+            }
+  
+            // Iniciar um novo caso
+            currentCase = {
+              time: rowData.time || '',
+              claimNumber: rowData.claimNumber || '',
+              claimant: rowData.claimant || '',
+              defendant: rowData.defendant || '',
+            };
+          } else {
+            // Continuação dos dados do caso atual
+            if (currentCase) {
+              if (rowData.claimant) {
+                currentCase.claimant += ' ' + rowData.claimant;
+              }
+              if (rowData.defendant) {
+                currentCase.defendant += ' ' + rowData.defendant;
+              }
             }
           }
         }
       }
-    }
-  });
-
-  // Após o loop, verificar se há um caso atual a ser salvo
-  if (currentCase) {
-    data.push({
-      'Court Name': courtName || '',
-      'Court Date': courtDate || '',
-      'Claim Number': currentCase.claimNumber || '',
-      'Claimant': currentCase.claimant.trim() || '',
-      'Defendant': currentCase.defendant.trim() || '',
-      'Duration': 'Not Provided',
-      'Hearing Type': 'Not Provided',
-      'Hearing Channel': 'Not Provided',
-      'Title': titlename,
     });
+  
+    // Após o loop, verificar se há um caso atual a ser salvo
+    if (currentCase) {
+      data.push({
+        'Court Name': courtName || '',
+        'Court Date': courtDate || '',
+        'Claim Number': currentCase.claimNumber || '',
+        'Claimant': currentCase.claimant.trim() || '',
+        'Defendant': currentCase.defendant.trim() || '',
+        'Duration': 'Not Provided',
+        'Hearing Type': 'Not Provided',
+        'Hearing Channel': 'Not Provided',
+        'Title': titlename,
+      });
+    }
+  
+    return data;
   }
-
-  return data;
-}
+  
+  
 
 /**
  * Função para extrair dados da tabela para o template5.
@@ -978,201 +980,7 @@ function saveToCsv(data, outputPath) {
   }
 }
 
-/**
- * Função para baixar arquivos HTML do site, incluindo login.
- */
-async function downloadHtmlFiles() {
-  const browser = await puppeteer.launch({ headless: true }); // Defina headless: false para visualizar a navegação
-  const page = await browser.newPage();
-  await page.goto('https://www.courtserve.net/courtlists/current/county/indexv2county.php', { waitUntil: 'networkidle2', timeout: 60000 });
 
-  // Função para realizar o login
-  async function performLogin(page) {
-    // Verificar se o usuário já está logado
-    const isLoggedIn = await page.evaluate(() => {
-      const loggedInUser = document.querySelector('#logged-in-user');
-      // Se o elemento existe e contém texto, o usuário está logado
-      return loggedInUser && loggedInUser.innerText.trim() !== '';
-    });
-
-    if (!isLoggedIn) {
-      // Usuário não está logado, verificar se o formulário de login está presente
-      const loginFormExists = await page.$('#login-form') !== null;
-
-      if (loginFormExists) {
-        // Preencha o email e a senha
-        await page.type('#login-form input[name="username"]', 'info@oresidentials.co.uk');
-        await page.type('#login-form input[name="password"]', 'Smith12345');
-
-        // Clique no botão de login
-        await Promise.all([
-          page.click('#login-form input[type="submit"]'),
-          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
-        ]);
-
-        // Após o login, verifique novamente se o usuário está logado
-        const loginSuccessful = await page.evaluate(() => {
-          const loggedInUser = document.querySelector('#logged-in-user');
-          return loggedInUser && loggedInUser.innerText.trim() !== '';
-        });
-
-        if (!loginSuccessful) {
-          console.error('Falha no login. Verifique suas credenciais.');
-          await browser.close();
-          throw new Error('Falha no login');
-        }
-      } else {
-        console.error('Formulário de login não encontrado.');
-        await browser.close();
-        throw new Error('Formulário de login não encontrado');
-      }
-    } else {
-      console.log('Usuário já está logado.');
-    }
-  }
-
-  // Realiza o login inicialmente
-  await performLogin(page);
-
-  // Aguarde o carregamento da tabela
-  await page.waitForSelector('table', { timeout: 60000 });
-
-  // Extrair os links da tabela
-  const links = await page.evaluate(() => {
-    const links = [];
-    const table = document.querySelector('table');
-    if (table) {
-      const aTags = Array.from(table.querySelectorAll('a'));
-      aTags.forEach(a => {
-        if (a.href && a.href.includes('viewcourtlistv2.php')) {
-          // Verifica se o link é completo, se não for, prefixa com o domínio
-          const fullLink = a.href.startsWith('http') ? a.href : 'https://www.courtserve.net' + a.getAttribute('href');
-          links.push(fullLink);
-        }
-      });
-    }
-    return links;
-  });
-
-  console.log('Links encontrados:', links);
-
-  const htmlFilesDir = path.join(__dirname, 'html_files');
-  if (!fs.existsSync(htmlFilesDir)) {
-    fs.mkdirSync(htmlFilesDir);
-  }
-
-  // Função para navegar com retentativas e relogar se necessário
-  async function navigateWithRetries(page, url, options, maxRetries = 3) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await page.goto(url, options);
-        return; // Navegação bem-sucedida
-      } catch (error) {
-        console.warn(`Tentativa ${attempt} falhou ao navegar para ${url}: ${error.message}`);
-
-        // Verificar se o formulário de login está presente
-        const loginFormExists = await page.$('#login-form') !== null;
-        if (loginFormExists) {
-          console.log('Formulário de login encontrado. Realizando login novamente.');
-          await performLogin(page);
-
-          // Tentar navegar novamente após o login
-          continue;
-        }
-
-        if (attempt === maxRetries) {
-          throw error; // Lança o erro após a última tentativa
-        }
-      }
-    }
-  }
-
-  for (let i = 0; i < links.length; i++) {
-    const link = links[i];
-    console.log(`Processando link ${i + 1}/${links.length}: ${link}`);
-
-    // Navegar para o link inicial com retentativas e relogar se necessário
-    try {
-      await navigateWithRetries(page, link, { waitUntil: 'networkidle2', timeout: 60000 });
-    } catch (error) {
-      console.error(`Erro ao navegar para ${link}: ${error.message}`);
-      continue; // Pula para o próximo link
-    }
-
-    // Aguarde o carregamento do link dentro de div#box2
-    try {
-      await page.waitForSelector('#box2 a', { timeout: 10000 });
-    } catch (error) {
-      console.warn(`Link dentro de #box2 não encontrado em ${link}: ${error.message}`);
-      continue; // pula para o próximo link
-    }
-
-    // Obtenha o link dentro de div#box2
-    const newTabLink = await page.evaluate(() => {
-      const box2Div = document.querySelector('#box2');
-      if (box2Div) {
-        const linkElement = box2Div.querySelector('a');
-        if (linkElement) {
-          const href = linkElement.getAttribute('href');
-          return href.startsWith('http') ? href : 'https://www.courtserve.net' + href;
-        }
-      }
-      return null;
-    });
-
-    if (newTabLink) {
-      // Abra uma nova página para a nova aba
-      const newPage = await browser.newPage();
-
-      // Navegar para o newTabLink com retentativas e relogar se necessário
-      try {
-        await navigateWithRetries(newPage, newTabLink, { waitUntil: 'networkidle2', timeout: 60000 });
-      } catch (error) {
-        console.error(`Erro ao navegar para ${newTabLink}: ${error.message}`);
-        await newPage.close();
-        continue; // Pula para o próximo link
-      }
-
-      const htmlContent = await newPage.content();
-
-      // Extrair o título da página para usar como nome de arquivo
-      const $ = cheerio.load(htmlContent);
-      let title = $('title').text().trim();
-
-      // Substituir caracteres inválidos no nome do arquivo
-      title = title.replace(/[<>:"/\\|?*]+/g, '');
-      // Limitar o tamanho do nome do arquivo para evitar problemas no sistema de arquivos
-      title = title.substring(0, 200);
-
-      // Adicionar extensão .html se não estiver presente
-      if (!title.toLowerCase().endsWith('.html')) {
-        title += '.html';
-      }
-
-      const fileName = title;
-      const filePath = path.join(htmlFilesDir, fileName);
-
-      // Verificar se o arquivo já existe e, se sim, adicionar um sufixo para evitar sobrescrita
-      let uniqueFilePath = filePath;
-      let counter = 1;
-      while (fs.existsSync(uniqueFilePath)) {
-        const parsedPath = path.parse(filePath);
-        uniqueFilePath = path.join(parsedPath.dir, `${parsedPath.name}_${counter}${parsedPath.ext}`);
-        counter++;
-      }
-
-      // Salvar o conteúdo HTML na pasta 'html_files' com o nome do título
-      fs.writeFileSync(uniqueFilePath, htmlContent);
-      console.log(`Salvo ${path.basename(uniqueFilePath)}`);
-
-      await newPage.close();
-    } else {
-      console.warn(`Link da lista completa não encontrado para ${link}`);
-    }
-  }
-
-  await browser.close();
-}
 
 /**
  * Função principal para executar a extração e salvamento.
@@ -1182,8 +990,8 @@ async function main() {
   const outputFile = 'output.csv';
   const allData = [];
 
-  // Baixar arquivos HTML do site
-  await downloadHtmlFiles();
+ 
+  
 
   // Verificar se o diretório de entrada existe
   if (!fs.existsSync(inputDirectory)) {
