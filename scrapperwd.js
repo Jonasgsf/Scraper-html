@@ -35,7 +35,7 @@ function identifyTemplate(html) {
   if (
     /start\s*time/i.test(textContent) &&
     /duration/i.test(textContent) &&
-    (/case\s*details/i.test(textContent)||/case\s*detail/i.test(textContent)) &&
+    /case\s*details/i.test(textContent) &&
     /hearing\s*type/i.test(textContent) &&
     /hearing\s*channel/i.test(textContent)
   ) {
@@ -154,55 +154,21 @@ function extractDataTemplate4($, table, courtName, courtDate) {
       courtName = extractCourtLocation(titlename);
 
       function formatCourtDate(courtDatestr) {
-        let datePart = courtDatestr;
-      
-        // Mapeamento de meses em galês para inglês
-        const welshToEnglishMonths = {
-          'Ionawr': 'January',
-          'Chwefror': 'February',
-          'Mawrth': 'March',
-          'Ebrill': 'April',
-          'Mai': 'May',
-          'Mehefin': 'June',
-          'Gorffennaf': 'July',
-          'Awst': 'August',
-          'Medi': 'September',
-          'Hydref': 'October',
-          'Tachwedd': 'November',
-          'Rhagfyr': 'December'
-        };
-      
-        // Se a data contiver uma vírgula, extrai a parte após a vírgula
-        if (courtDatestr.includes(',')) {
-          const parts = courtDatestr.split(',');
-          for (let part of parts) {
-            part = part.trim();
-      
-            // Substitui meses em galês por inglês
-            for (const [welsh, english] of Object.entries(welshToEnglishMonths)) {
-              const regex = new RegExp(`\\b${welsh}\\b`, 'gi');
-              part = part.replace(regex, english);
-            }
-      
-            // Remove sufixos ordinais como 'st', 'nd', 'rd', 'th'
-            part = part.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-      
-            // Tenta criar um objeto Date
-            const date = new Date(part);
-      
-            // Verifica se a data é válida
-            if (!isNaN(date)) {
-              const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
-              const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
-              const year = date.getFullYear();
-      
-              return `${day}/${month}/${year}`;
-            }
-          }
-        }
-      
-        console.error(`Data inválida: ${courtDatestr}`);
-        return '';
+        // Extrai a parte da data da string
+        const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
+
+        // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
+        const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
+
+        // Cria um objeto Date
+        const date = new Date(cleanDatePart);
+
+        // Formata a data como dd/mm/yyyy
+        const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
+        const year = date.getFullYear();
+
+        return `${day}/${month}/${year}`;
       }
 
       const rowData = {
@@ -234,307 +200,275 @@ function extractDataTemplate4($, table, courtName, courtDate) {
  * @returns {Array} Array de objetos com os dados extraídos.
  */
 function extractDataTemplate4a($, table, courtName, courtDate) {
-  let titlename = $('title').text().trim();
-  const data = [];
-  const rows = table.find('tr');
-
-  let headersIndex = {};
-  let currentCase = null; // Para armazenar o caso atual
-  let lastTime = ''; // Para armazenar o último Time encontrado
-
-  function normalizeText(text) {
-    return text.replace(/\s+/g, ' ').trim().toLowerCase();
-  }
-
-  function extractCourtLocation(titlename) {
-    const match = titlename.match(/CourtServe:\s*(.*?)\s*,/i);
-    if (match) {
-      return match[1].trim();
-    } else {
-      // Tentar outra correspondência
-      const matchAlt = titlename.match(/In The County Court at\s*(.*)/i);
-      if (matchAlt) {
-        return matchAlt[1].trim();
-      }
+    let titlename = $('title').text().trim();
+    const data = [];
+    const rows = table.find('tr');
+  
+    let headersIndex = {};
+    let currentCase = null; // Para armazenar o caso atual
+    let lastTime = ''; // Para armazenar o último Time encontrado
+  
+    function normalizeText(text) {
+      return text.replace(/\s+/g, ' ').trim().toLowerCase();
     }
-    return '';
-  }
-
-  function formatCourtDate(courtDatestr) {
-    if (!courtDatestr) {
-      // Tentar extrair a data do título ou do conteúdo
-      const dateMatch = titlename.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
-      if (dateMatch) {
-        courtDatestr = dateMatch[1];
+  
+    function extractCourtLocation(titlename) {
+      const match = titlename.match(/CourtServe:\s*(.*?)\s*,/i);
+      if (match) {
+        return match[1].trim();
       } else {
-        const dateMatchAlt = titlename.match(/\b([A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4})\b/);
-        if (dateMatchAlt) {
-          courtDatestr = dateMatchAlt[1];
+        // Tentar outra correspondência
+        const matchAlt = titlename.match(/In The County Court at\s*(.*)/i);
+        if (matchAlt) {
+          return matchAlt[1].trim();
         }
       }
-    }
-
-    // Agora, converter courtDatestr para o formato "dd/mm/aaaa"
-    let date;
-    if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(courtDatestr)) {
-      // Se já estiver no formato dd/mm/aaaa, converter diretamente
-      const parts = courtDatestr.split('/');
-      const day = parts[0].padStart(2, '0');
-      const month = parts[1].padStart(2, '0');
-      let year = parts[2];
-      if (year.length === 2) {
-        year = '20' + year;
-      }
-      date = new Date(`${year}-${month}-${day}`);
-    } else if (/[A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}/.test(courtDatestr)) {
-      // Formato textual, por exemplo, "Tuesday, 12 November 2024"
-      date = new Date(courtDatestr);
-    } else {
-      // Tentativa de criar a data diretamente
-      date = new Date(courtDatestr);
-    }
-
-    if (isNaN(date)) {
       return '';
     }
-
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-
-    return `${day}/${month}/${year}`;
-  }
-
-  // Obter courtName e courtDate do título se estiverem vazios
-  if (!courtName) {
-    courtName = extractCourtLocation(titlename);
-  }
-  if (!courtDate) {
-    courtDate = formatCourtDate(courtDate);
-  }
-
-  // Iterar pelas linhas da tabela
-  rows.each((i, row) => {
-    let cells = $(row).find('th, td');
-    let cellsText = [];
-    let logicalIndexes = []; // Para mapear o índice lógico de cada célula
-
-    let logicalIndex = 0;
-
-    cells.each((j, cell) => {
-      let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
-      cellsText.push(cellText);
-
-      let colspan = parseInt($(cell).attr('colspan')) || 1;
-      logicalIndexes.push({ index: logicalIndex, colspan: colspan });
-
-      logicalIndex += colspan;
-    });
-
-    // Verificar se estamos no novo formato
-    const isNewFormat = cellsText.some((text) => /^claim\s+\w+:/i.test(text));
-
-    if (isNewFormat) {
-      // Lógica para o novo formato
-      cellsText.forEach((cellText) => {
-        // Extrair o Time se presente
-        const timeMatch = cellText.match(/^(\d{1,2}\.\d{2})$/);
-        if (timeMatch) {
-          lastTime = timeMatch[1];
-        }
-
-        // Extrair Claim Number, Claimant e Defendant
-        const claimMatch = cellText.match(/^Claim\s+(\w+):\s*(.*?)\s+versus\s+(.*)/i);
-        if (claimMatch) {
-          const claimNumber = claimMatch[1];
-          const claimant = claimMatch[2];
-          const defendant = claimMatch[3];
-
-          // Salvar o caso atual se houver
-          if (currentCase) {
-            data.push({
-              'Court Name': courtName || '',
-              'Court Date': courtDate || '',
-              'Claim Number': currentCase.claimNumber || '',
-              'Claimant': currentCase.claimant.trim() || '',
-              'Defendant': currentCase.defendant.trim() || '',
-              'Duration': 'Not Provided',
-              'Hearing Type': 'Not Provided',
-              'Hearing Channel': 'Not Provided',
-              'Title': titlename,
-            });
+  
+    function formatCourtDate(courtDatestr) {
+      if (!courtDatestr) {
+        // Tentar extrair a data do título ou do conteúdo
+        const dateMatch = titlename.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+        if (dateMatch) {
+          courtDatestr = dateMatch[1];
+        } else {
+          const dateMatchAlt = titlename.match(/\b([A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4})\b/);
+          if (dateMatchAlt) {
+            courtDatestr = dateMatchAlt[1];
           }
-
-          // Iniciar um novo caso
-          currentCase = {
-            time: lastTime || '',
-            claimNumber: claimNumber,
-            claimant: claimant,
-            defendant: defendant,
-          };
         }
-      });
-    } else {
-      // Lógica para o formato original
-      // Identificar os índices dos cabeçalhos
-      if (
-        cellsText.some((text) => /^time$/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /claim\s*number/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /^claimant$/i.test(normalizeText(text))) &&
-        cellsText.some((text) => /^(defendant|respondent)$/i.test(normalizeText(text)))
-      ) {
-        // Mapear os índices dos cabeçalhos
-        logicalIndex = 0;
-
-        cells.each((j, cell) => {
-          let headerText = normalizeText($(cell).text());
-          let colspan = parseInt($(cell).attr('colspan')) || 1;
-
-          if (/^time$/i.test(headerText)) {
-            headersIndex.time = logicalIndex;
-          } else if (/^claim\s*number$/i.test(headerText)) {
-            headersIndex.claimNumber = logicalIndex;
-          } else if (/^claimant$/i.test(headerText)) {
-            headersIndex.claimant = logicalIndex;
-          } else if (/^(defendant|respondent)$/i.test(headerText)) {
-            headersIndex.defendant = logicalIndex;
-          }
-
-          logicalIndex += colspan;
-        });
-
-      console.log('Cabeçalhos encontrados (template4a):', headersIndex);
-    } else if (cellsText.length > 1 && Object.keys(headersIndex).length > 0) {
-      // Linha de dados válida
-      if (cellsText.every((text) => text === '')) return;
-      function splitAtFirstPipe(text) {
-        const [firstPart, ...rest] = text.split(/ \| /);
-        return [firstPart.trim(), rest.join(' | ').trim()];
       }
-      const time = cellsText[0] || '';
-      const claimNumber = cellsText[1] || '';
-
-      let claimant = '';
-      let defendant = '';
-
-      if (cellsText.length === 3) {
-        const claimantANDdefendant = cellsText[2] || '';
-        [claimant, defendant] = splitAtFirstPipe(claimantANDdefendant);
-        if (claimant === 'Phoenix  Community  Housing | Association | (Bellingham & | Downham) | Limited') {
-          claimant = claimant.replace(/\|/g, '');
-          defendant = defendant.replace(/\|/g, '');
+  
+      // Agora, converter courtDatestr para o formato "dd/mm/aaaa"
+      let date;
+      if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(courtDatestr)) {
+        // Se já estiver no formato dd/mm/aaaa, converter diretamente
+        const parts = courtDatestr.split('/');
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        let year = parts[2];
+        if (year.length === 2) {
+          year = '20' + year;
         }
-
-        if (defendant === '') {
-          defendant = 'Not Provided';
-        }
-        if (claimant === '') {
-          claimant = 'Not Provided';
-        }
+        date = new Date(`${year}-${month}-${day}`);
+      } else if (/[A-Za-z]+,?\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}/.test(courtDatestr)) {
+        // Formato textual, por exemplo, "Tuesday, 12 November 2024"
+        date = new Date(courtDatestr);
       } else {
-        claimant = cellsText[2] || 'Not Provided';
-        defendant = cellsText[3] || 'Not Provided';
-        claimant = claimant.replace(/\|/g, '');
-        defendant = defendant.replace(/\|/g, '');
+        // Tentativa de criar a data diretamente
+        date = new Date(courtDatestr);
       }
-
-      console.log(cellsText);
-      // Logs para depuração
-      console.log(`Linha ${i}:`, {
-        claimNumber,
-        claimant,
-        defendant,
-      });
-      function extractCourtLocation(titlename) {
-        const match = titlename.match(/CourtServe:\s*(.*?)\s*County Court/i);
-        return match ? match[1].trim() : null;
-      }
-
-      courtName = extractCourtLocation(titlename);
-      function formatCourtDate(courtDatestr) {
-        let datePart = courtDatestr;
-      
-        // Mapeamento de meses em galês para inglês
-        const welshToEnglishMonths = {
-          'Ionawr': 'January',
-          'Chwefror': 'February',
-          'Mawrth': 'March',
-          'Ebrill': 'April',
-          'Mai': 'May',
-          'Mehefin': 'June',
-          'Gorffennaf': 'July',
-          'Awst': 'August',
-          'Medi': 'September',
-          'Hydref': 'October',
-          'Tachwedd': 'November',
-          'Rhagfyr': 'December'
-        };
-      
-        // Se a data contiver uma vírgula, extrai a parte após a vírgula
-        if (courtDatestr.includes(',')) {
-          const parts = courtDatestr.split(',');
-          for (let part of parts) {
-            part = part.trim();
-      
-            // Substitui meses em galês por inglês
-            for (const [welsh, english] of Object.entries(welshToEnglishMonths)) {
-              const regex = new RegExp(`\\b${welsh}\\b`, 'gi');
-              part = part.replace(regex, english);
-            }
-      
-            // Remove sufixos ordinais como 'st', 'nd', 'rd', 'th'
-            part = part.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-      
-            // Tenta criar um objeto Date
-            const date = new Date(part);
-      
-            // Verifica se a data é válida
-            if (!isNaN(date)) {
-              const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
-              const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
-              const year = date.getFullYear();
-      
-              return `${day}/${month}/${year}`;
-            }
-          }
-        }
-      
-        console.error(`Data inválida: ${courtDatestr}`);
+  
+      if (isNaN(date)) {
         return '';
       }
-      const rowData = {
+  
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+  
+      return `${day}/${month}/${year}`;
+    }
+  
+    // Obter courtName e courtDate do título se estiverem vazios
+    if (!courtName) {
+      courtName = extractCourtLocation(titlename);
+    }
+    if (!courtDate) {
+      courtDate = formatCourtDate(courtDate);
+    }
+  
+    // Iterar pelas linhas da tabela
+    rows.each((i, row) => {
+      let cells = $(row).find('th, td');
+      let cellsText = [];
+      let logicalIndexes = []; // Para mapear o índice lógico de cada célula
+  
+      let logicalIndex = 0;
+  
+      cells.each((j, cell) => {
+        let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
+        cellsText.push(cellText);
+  
+        let colspan = parseInt($(cell).attr('colspan')) || 1;
+        logicalIndexes.push({ index: logicalIndex, colspan: colspan });
+  
+        logicalIndex += colspan;
+      });
+  
+      // Verificar se estamos no novo formato
+      const isNewFormat = cellsText.some((text) => /^claim\s+\w+:/i.test(text));
+  
+      if (isNewFormat) {
+        // Lógica para o novo formato
+        cellsText.forEach((cellText) => {
+          // Extrair o Time se presente
+          const timeMatch = cellText.match(/^(\d{1,2}\.\d{2})$/);
+          if (timeMatch) {
+            lastTime = timeMatch[1];
+          }
+  
+          // Extrair Claim Number, Claimant e Defendant
+          const claimMatch = cellText.match(/^Claim\s+(\w+):\s*(.*?)\s+versus\s+(.*)/i);
+          if (claimMatch) {
+            const claimNumber = claimMatch[1];
+            const claimant = claimMatch[2];
+            const defendant = claimMatch[3];
+  
+            // Salvar o caso atual se houver
+            if (currentCase) {
+              data.push({
+                'Court Name': courtName || '',
+                'Court Date': courtDate || '',
+                'Claim Number': currentCase.claimNumber || '',
+                'Claimant': currentCase.claimant.trim() || '',
+                'Defendant': currentCase.defendant.trim() || '',
+                'Duration': 'Not Provided',
+                'Hearing Type': 'Not Provided',
+                'Hearing Channel': 'Not Provided',
+                'Title': titlename,
+              });
+            }
+  
+            // Iniciar um novo caso
+            currentCase = {
+              time: lastTime || '',
+              claimNumber: claimNumber,
+              claimant: claimant,
+              defendant: defendant,
+            };
+          }
+        });
+      } else {
+        // Lógica para o formato original
+        // Identificar os índices dos cabeçalhos
+        if (
+          cellsText.some((text) => /^time$/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /claim\s*number/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /^claimant$/i.test(normalizeText(text))) &&
+          cellsText.some((text) => /^(defendant|respondent)$/i.test(normalizeText(text)))
+        ) {
+          // Mapear os índices dos cabeçalhos
+          logicalIndex = 0;
+  
+          cells.each((j, cell) => {
+            let headerText = normalizeText($(cell).text());
+            let colspan = parseInt($(cell).attr('colspan')) || 1;
+  
+            if (/^time$/i.test(headerText)) {
+              headersIndex.time = logicalIndex;
+            } else if (/^claim\s*number$/i.test(headerText)) {
+              headersIndex.claimNumber = logicalIndex;
+            } else if (/^claimant$/i.test(headerText)) {
+              headersIndex.claimant = logicalIndex;
+            } else if (/^(defendant|respondent)$/i.test(headerText)) {
+              headersIndex.defendant = logicalIndex;
+            }
+  
+            logicalIndex += colspan;
+          });
+  
+          console.log('Cabeçalhos encontrados (template4a):', headersIndex);
+        } else if (cellsText.length > 0 && Object.keys(headersIndex).length > 0) {
+          // Linha de dados
+          if (cellsText.every((text) => text === '')) return;
+  
+          // Mapear os dados considerando o colspan
+          let rowData = {};
+          let cellLogicalIndex = 0;
+  
+          cells.each((j, cell) => {
+            let cellText = $(cell).text().trim().replace(/\s+/g, ' ');
+            let colspan = parseInt($(cell).attr('colspan')) || 1;
+  
+            // Atribuir o texto da célula aos campos corretos
+            for (let k = 0; k < colspan; k++) {
+              let currentLogicalIndex = cellLogicalIndex + k;
+  
+              if (currentLogicalIndex === headersIndex.time) {
+                rowData.time = cellText;
+              } else if (currentLogicalIndex === headersIndex.claimNumber) {
+                rowData.claimNumber = cellText;
+              } else if (currentLogicalIndex === headersIndex.claimant) {
+                if (!rowData.claimant) rowData.claimant = cellText;
+                else rowData.claimant += ' ' + cellText;
+              } else if (currentLogicalIndex === headersIndex.defendant) {
+                if (!rowData.defendant) rowData.defendant = cellText;
+                else rowData.defendant += ' ' + cellText;
+              }
+            }
+  
+            cellLogicalIndex += colspan;
+          });
+  
+          // Se a linha tiver um novo Time, atualizar lastTime
+          if (rowData.time) {
+            lastTime = rowData.time;
+          } else if (lastTime) {
+            rowData.time = lastTime;
+          }
+  
+          // Verificar se esta linha inicia um novo caso com base no Claim Number
+          let isNewCase = rowData.claimNumber;
+  
+          if (isNewCase) {
+            // Salvar o caso atual se houver
+            if (currentCase) {
+              data.push({
+                'Court Name': courtName || '',
+                'Court Date': courtDate || '',
+                'Claim Number': currentCase.claimNumber || '',
+                'Claimant': currentCase.claimant.trim() || '',
+                'Defendant': currentCase.defendant.trim() || '',
+                'Duration': 'Not Provided',
+                'Hearing Type': 'Not Provided',
+                'Hearing Channel': 'Not Provided',
+                'Title': titlename,
+              });
+            }
+  
+            // Iniciar um novo caso
+            currentCase = {
+              time: rowData.time || '',
+              claimNumber: rowData.claimNumber || '',
+              claimant: rowData.claimant || '',
+              defendant: rowData.defendant || '',
+            };
+          } else {
+            // Continuação dos dados do caso atual
+            if (currentCase) {
+              if (rowData.claimant) {
+                currentCase.claimant += ' ' + rowData.claimant;
+              }
+              if (rowData.defendant) {
+                currentCase.defendant += ' ' + rowData.defendant;
+              }
+            }
+          }
+        }
+      }
+    });
+  
+    // Após o loop, verificar se há um caso atual a ser salvo
+    if (currentCase) {
+      data.push({
         'Court Name': courtName || '',
-        'Court Date': formatCourtDate(courtDate) || '',
-        'Claim Number': claimNumber || '',
-        'Claimant': claimant || '',
-        'Defendant': defendant || '',
+        'Court Date': courtDate || '',
+        'Claim Number': currentCase.claimNumber || '',
+        'Claimant': currentCase.claimant.trim() || '',
+        'Defendant': currentCase.defendant.trim() || '',
         'Duration': 'Not Provided',
         'Hearing Type': 'Not Provided',
         'Hearing Channel': 'Not Provided',
         'Title': titlename,
-      };
-
-      data.push(rowData);
+      });
     }
-  });
-
-  // Após o loop, verificar se há um caso atual a ser salvo
-  if (currentCase) {
-    data.push({
-      'Court Name': courtName || '',
-      'Court Date': courtDate || '',
-      'Claim Number': currentCase.claimNumber || '',
-      'Claimant': currentCase.claimant.trim() || '',
-      'Defendant': currentCase.defendant.trim() || '',
-      'Duration': 'Not Provided',
-      'Hearing Type': 'Not Provided',
-      'Hearing Channel': 'Not Provided',
-      'Title': titlename,
-    });
+  
+    return data;
   }
-
-  return data;
-}
+  
+  
 
 /**
  * Função para extrair dados da tabela para o template5.
@@ -574,61 +508,41 @@ function extractDataTemplate5($, table, courtName, courtDate) {
     }
 
     // Identificar os cabeçalhos como 'Start Time', 'Duration', 'Case Details', 'Hearing Type' e 'Hearing Channel'
-    if (cellsText.some((text) => /start\s*time/i.test(normalizeText(text)))) {
+    if (cellsText.some((text) => /^start\s*time$/i.test(normalizeText(text)))) {
       let logicalIndex = 0;
-    
+
       dataCells.each((j, cell) => {
         let headerText = normalizeText($(cell).text());
         let colspan = parseInt($(cell).attr('colspan')) || 1;
-    
-        if (/start\s*time/i.test(headerText)) {
+
+        if (/^start\s*time$/i.test(headerText)) {
           headersIndex.startTime = logicalIndex;
-        } else if (/duration/i.test(headerText)) {
+        } else if (/^duration$/i.test(headerText)) {
           headersIndex.duration = logicalIndex;
-        } else if (/case\s*detail(s)?/i.test(headerText)) {
+        } else if (/^case\s*details$/i.test(headerText)) {
           headersIndex.caseDetails = logicalIndex;
-        } else if (/hearing\s*type/i.test(headerText)) {
+        } else if (/^hearing\s*type$/i.test(headerText)) {
           headersIndex.hearingType = logicalIndex;
-        } else if (/hearing\s*channel/i.test(headerText)) {
+        } else if (/^hearing\s*channel$/i.test(headerText)) {
           headersIndex.hearingChannel = logicalIndex;
         }
-    
+
         logicalIndex += colspan;
       });
-    
 
       console.log('Cabeçalhos encontrados (template5):', headersIndex);
     } else if (cellsText.length > 1 && Object.keys(headersIndex).length > 0) {
       if (cellsText.every((text) => text === '')) return;
 
       // Captura apenas as linhas que contêm "Possession" no Case Details
-      let hearingType = cellsText[5];
-      if (!/possessions?/i.test(hearingType)) {
-        // Caso não encontre, tenta na posição 3
-        hearingType = cellsText[3];
-        if (!/possessions?/i.test(hearingType)) {
-          // Caso ainda não encontre, tenta na posição 6
-          hearingType = cellsText[6];
-          if (!/possessions?/i.test(hearingType)) return;
-        }
-      
-      };
-      let startTime = cellsText[2];
-      let duration = cellsText[3];
+      const hearingType = cellsText[5];
+      if (!/possession/i.test(hearingType)) return;
+      const startTime = cellsText[2];
+      const duration = cellsText[3];
       let caseDetails = cellsText[4];
-      let hearingChannel = cellsText[6];
-      if(hearingType === cellsText[3]){
-        startTime = cellsText[0];
-        duration = cellsText[1];
-        caseDetails = cellsText[2];
-        hearingChannel = cellsText[4];
-      } else if(hearingType === cellsText[6]){
-        startTime = cellsText[3];
-        duration = cellsText[4];
-        caseDetails = cellsText[5];
-        hearingChannel = cellsText[7];
-      }
       const claimNumber = caseDetails.split(' ')[0];
+      const hearingChannel = cellsText[6];
+
       // Verificando se claimNumber é válido
       if (claimNumber === 'PCOL') return;
 
@@ -676,80 +590,21 @@ function extractDataTemplate5($, table, courtName, courtDate) {
       courtName = extractCourtLocation(titlename);
 
       function formatCourtDate(courtDatestr) {
-        let datePart = courtDatestr;
-      
-        // Mapeamento de meses em galês para inglês
-        const welshToEnglishMonths = {
-          'Ionawr': 'January',
-          'Chwefror': 'February',
-          'Mawrth': 'March',
-          'Ebrill': 'April',
-          'Mai': 'May',
-          'Mehefin': 'June',
-          'Gorffennaf': 'July',
-          'Awst': 'August',
-          'Medi': 'September',
-          'Hydref': 'October',
-          'Tachwedd': 'November',
-          'Rhagfyr': 'December'
-        };
-      
-        // Mantém a lógica próxima do original:
-        // Se há vírgula, extrai a parte após a primeira vírgula
-        if (courtDatestr.includes(',')) {
-          const parts = courtDatestr.split(',');
-          // Lógica original: pegar a parte após a vírgula (neste caso, [1])
-          let candidate = parts[1] ? parts[1].trim() : courtDatestr.trim();
-      
-          // Substitui meses galeses, se houver
-          for (const [welsh, english] of Object.entries(welshToEnglishMonths)) {
-            const regex = new RegExp(`\\b${welsh}\\b`, 'gi');
-            candidate = candidate.replace(regex, english);
-          }
-      
-          // Remove sufixos ordinais
-          candidate = candidate.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-      
-          let date = new Date(candidate);
-      
-          // Se ainda for inválido, tente fallback com outra parte (por exemplo a parte [3]),
-          // caso exista. Isso permite que, se a parte original não funcionar, 
-          // uma parte posterior em inglês puro possa ser utilizada, sem quebrar templates antigos.
-          if (isNaN(date) && parts[3]) {
-            let fallback = parts[3].trim();
-            fallback = fallback.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-            const fallbackDate = new Date(fallback);
-            if (!isNaN(fallbackDate)) {
-              date = fallbackDate;
-            }
-          }
-      
-          if (isNaN(date)) {
-            console.error(`Data inválida: ${courtDatestr}`);
-            return '';
-          }
-      
-          const day = String(date.getDate()).padStart(2, '0');
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const year = date.getFullYear();
-      
-          return `${day}/${month}/${year}`;
-        } else {
-          // Caso não haja vírgula, mantém a lógica original
-          datePart = datePart.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-          const date = new Date(datePart);
-      
-          if (isNaN(date)) {
-            console.error(`Data inválida: ${datePart}`);
-            return '';
-          }
-      
-          const day = String(date.getDate()).padStart(2, '0');
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const year = date.getFullYear();
-      
-          return `${day}/${month}/${year}`;
-        }
+        // Extrai a parte da data da string
+        const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
+
+        // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
+        const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
+
+        // Cria um objeto Date
+        const date = new Date(cleanDatePart);
+
+        // Formata a data como dd/mm/yyyy
+        const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
+        const year = date.getFullYear();
+
+        return `${day}/${month}/${year}`;
       }
 
       const rowData = {
@@ -885,55 +740,21 @@ function extractDataTemplate7($, table, courtName, courtDate) {
       courtName = extractCourtLocation(titlename);
 
       function formatCourtDate(courtDatestr) {
-        let datePart = courtDatestr;
-      
-        // Mapeamento de meses em galês para inglês
-        const welshToEnglishMonths = {
-          'Ionawr': 'January',
-          'Chwefror': 'February',
-          'Mawrth': 'March',
-          'Ebrill': 'April',
-          'Mai': 'May',
-          'Mehefin': 'June',
-          'Gorffennaf': 'July',
-          'Awst': 'August',
-          'Medi': 'September',
-          'Hydref': 'October',
-          'Tachwedd': 'November',
-          'Rhagfyr': 'December'
-        };
-      
-        // Se a data contiver uma vírgula, extrai a parte após a vírgula
-        if (courtDatestr.includes(',')) {
-          const parts = courtDatestr.split(',');
-          for (let part of parts) {
-            part = part.trim();
-      
-            // Substitui meses em galês por inglês
-            for (const [welsh, english] of Object.entries(welshToEnglishMonths)) {
-              const regex = new RegExp(`\\b${welsh}\\b`, 'gi');
-              part = part.replace(regex, english);
-            }
-      
-            // Remove sufixos ordinais como 'st', 'nd', 'rd', 'th'
-            part = part.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-      
-            // Tenta criar um objeto Date
-            const date = new Date(part);
-      
-            // Verifica se a data é válida
-            if (!isNaN(date)) {
-              const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
-              const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
-              const year = date.getFullYear();
-      
-              return `${day}/${month}/${year}`;
-            }
-          }
-        }
-      
-        console.error(`Data inválida: ${courtDatestr}`);
-        return '';
+        // Extrai a parte da data da string
+        const datePart = courtDatestr.split(', ')[1]; // '18th October 2024'
+
+        // Remove o sufixo 'th', 'st', 'nd', ou 'rd' da data
+        const cleanDatePart = datePart.replace(/(\d+)(st|nd|rd|th)/, '$1'); // '18 October 2024'
+
+        // Cria um objeto Date
+        const date = new Date(cleanDatePart);
+
+        // Formata a data como dd/mm/yyyy
+        const day = String(date.getDate()).padStart(2, '0'); // Adiciona zero à esquerda
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês começa em 0
+        const year = date.getFullYear();
+
+        return `${day}/${month}/${year}`;
       }
 
       const rowData = {
@@ -1000,65 +821,19 @@ function scrapeDataFromHtml(filePath) {
 
   let courtName = '';
   let courtDate = '';
-  
+
   $('p').each((i, elem) => {
     const text = $(elem).text().trim();
-  
-    // Lógica original para capturar courtName
     if (/court at/i.test(text) || /sitting at/i.test(text)) {
       const parts = text.split(/court at|sitting at/i);
       if (parts.length > 1) {
         courtName = parts[1].trim();
       }
     }
-  
-    // Padrão original para datas com vírgula (mantido)
+
     const datePattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}$/i;
     if (datePattern.test(text)) {
       courtDate = text;
-    }
-  
-    // Fallback para formato bilíngue com "Monday" (ou outro dia em inglês)
-    if (!courtDate && /Dydd\s+\w+,\s*\d{1,2}/i.test(text) && /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(text)) {
-      const parts = text.split(',').map(part => part.trim());
-      if (parts.length > 3) {
-        let candidate = parts[3]; // Por ex: "18 November 2024"
-        candidate = candidate.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-        const testDate = new Date(candidate);
-        if (!isNaN(testDate)) {
-          courtDate = candidate;
-        }
-      }
-    }
-  
-    // Se ainda está vazio, tenta o fallback para datas sem vírgula em inglês, ex: "Monday 11th November 2024"
-    if (courtDate === '') {
-      // Padrão para datas sem vírgula: "Monday 11th November 2024"
-      const noCommaPattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}$/i;
-      if (noCommaPattern.test(text)) {
-        let candidate = text.replace(/(\d+)(st|nd|rd|th)/i, '$1');
-        const testDate = new Date(candidate);
-        if (!isNaN(testDate)) {
-          courtDate = candidate;
-        }
-      }
-    }
-    if (!courtDate) {
-      // Novo fallback para data pura, ex: "15TH November 2024"
-      const pureDatePattern = /^\d{1,2}(st|nd|rd|th)?\s+\w+\s+\d{4}$/i;
-      if (pureDatePattern.test(text)) {
-        let candidate = text.replace(/(\d+)(st|nd|rd|th)/i, '$1'); // Remove sufixos ordinais
-    
-        // Agora candidate é algo como "15 November 2024"
-        // O new Date() pode não reconhecer bem "DD Month YYYY" sem vírgula.
-        // Vamos reformatar para "Month DD, YYYY" antes de criar a data.
-        candidate = candidate.replace(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/i, (match, d, mon, y) => `${mon} ${d}, ${y}`);
-    
-        const testDate = new Date(candidate);
-        if (!isNaN(testDate)) {
-          courtDate = candidate; // agora temos uma data válida
-        }
-      }
     }
   });
 
@@ -1098,14 +873,13 @@ function scrapeDataFromHtml(filePath) {
     });
   } else if (template === 'template5') {
     tables = $('table').filter(function () {
-      const tableText = $(this).text().toLowerCase().replace(/\s+/g, ' ');
-  
+      const tableText = $(this).text().toLowerCase();
       return (
-        /(amser\s*cychwyn\s*,\s*)?start\s*time/i.test(tableText) &&
-        /(hyd,\s*)?duration/i.test(tableText) &&
-        /(manylion\s*yr\s*achos,\s*)?case\s*detail(s)?/i.test(tableText) &&
-        /(math\s*o\s*wrandawiad,\s*)?hearing\s*type/i.test(tableText) &&
-        /(sianel\s*clyw,\s*)?hearing\s*channel/i.test(tableText)
+        /start\s*time/i.test(tableText) &&
+        /duration/i.test(tableText) &&
+        /case\s*details/i.test(tableText) &&
+        /hearing\s*type/i.test(tableText) &&
+        /hearing\s*channel/i.test(tableText)
       );
     });
   }
@@ -1164,12 +938,10 @@ function scrapeDataFromHtml(filePath) {
 /**
  * Função para salvar dados em um arquivo CSV.
  *
- /**
- * Função para salvar dados em um arquivo CSV.
- *
  * @param {Array} data - Array de objetos com os dados a serem salvos.
+ * @param {string} outputPath - Caminho para o arquivo CSV de saída.
  */
-function saveToCsv(data) {
+function saveToCsv(data, outputPath) {
   try {
     const headers = [
       'Court Name',
@@ -1201,13 +973,8 @@ function saveToCsv(data) {
       )
       .join('\n');
 
-    // Adiciona a data atual ao nome do arquivo
-    const now = new Date();
-    const dateSuffix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const outputFileName = `output_${dateSuffix}.csv`;
-
-    fs.writeFileSync(outputFileName, csvContent);
-    console.log(`Dados salvos em ${outputFileName}`);
+    fs.writeFileSync(outputPath, csvContent);
+    console.log(`Dados salvos em ${outputPath}`);
   } catch (error) {
     console.error(`Erro ao salvar o arquivo CSV: ${error.message}`);
   }
@@ -1218,14 +985,13 @@ function saveToCsv(data) {
 /**
  * Função principal para executar a extração e salvamento.
  */
-/**
- * Função principal para executar a extração e salvamento.
- */
 async function main() {
   const inputDirectory = './html_files';
+  const outputFile = 'output.csv';
   const allData = [];
 
-
+ 
+  
 
   // Verificar se o diretório de entrada existe
   if (!fs.existsSync(inputDirectory)) {
@@ -1266,13 +1032,10 @@ async function main() {
 
   // Salva todos os dados no arquivo CSV final
   if (allData.length > 0) {
-    saveToCsv(allData);
+    saveToCsv(allData, outputFile);
   } else {
     console.log('Nenhum dado extraído de nenhum arquivo.');
   }
 }
 
 main(); // Executa a função principal
-
-
-
