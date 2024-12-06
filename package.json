@@ -7,14 +7,21 @@
     "start": "node scraper.js"
   },
   "dependencies": {
-    "puppeteer": "^19.0.0",
     "cheerio": "^1.0.0-rc.10",
-    "dotenv": "^16.0.0"  
+    "dotenv": "^16.0.0",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^23.9.0"
   },
   "engines": {
     "node": ">=14"
   },
-  "keywords": ["puppeteer", "scraping", "courtserve", "automation", "cheerio"],
+  "keywords": [
+    "puppeteer",
+    "scraping",
+    "courtserve",
+    "automation",
+    "cheerio"
+  ],
   "author": "Jonas Sarmento",
   "license": "ISC"
 }
